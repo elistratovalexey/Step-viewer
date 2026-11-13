@@ -87,7 +87,9 @@ async function open(url, name) {
       angularDeflection: 0.5
     };
     let res;
-    try { res = occt[fn](data, params); } catch (e) { res = occt[fn](data, null); }
+    const reader = occt[fn];
+    try { res = reader.call(occt, data, params); } catch (e) { res = reader.call(occt, data, null); }
+
     if (!res || !res.success || !res.meshes || !res.meshes.length)
       throw new Error('В файле не найдена геометрия либо формат не поддерживается.');
 
