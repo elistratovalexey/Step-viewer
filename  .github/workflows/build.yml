@@ -1,0 +1,50 @@
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Download web libraries (OpenCascade WASM + three.js)
+        run: |
+          set -e
+          LIB=app/src/main/assets/viewer/lib
+          mkdir -p "$LIB/addons/controls"
+          npm install --no-audit --no-fund occt-import-js three@0.160.0
+          ls -l node_modules/occt-import-js/dist
+          cp node_modules/occt-import-js/dist/occt-import-js.js   "$LIB/"
+          cp node_modules/occt-import-js/dist/occt-import-js.wasm "$LIB/"
+          cp node_modules/three/build/three.module.js             "$LIB/"
+          cp node_modules/three/examples/jsm/controls/OrbitControls.js "$LIB/addons/controls/"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        run: sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Build debug APK
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StepViewer-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
