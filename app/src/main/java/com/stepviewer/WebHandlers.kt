@@ -7,7 +7,7 @@ import android.webkit.WebResourceResponse
 import androidx.webkit.WebViewAssetLoader
 import java.io.IOException
 
-/** Отдаёт assets/viewer/* с корректными MIME-типами (критично для .wasm и ES-модулей). */
+// Отдаёт файлы из assets/viewer с правильными MIME-типами (важно для .wasm и ES-модулей).
 class ViewerAssetsHandler(private val context: Context) : WebViewAssetLoader.PathHandler {
 
     override fun handle(path: String): WebResourceResponse? {
@@ -39,7 +39,7 @@ class ViewerAssetsHandler(private val context: Context) : WebViewAssetLoader.Pat
     }
 }
 
-/** Стримит выбранный пользователем файл прямо в WebView, без копирования и base64. */
+// Стримит выбранный пользователем файл прямо в WebView, без копирования и base64.
 class ModelPathHandler(private val resolver: ContentResolver) : WebViewAssetLoader.PathHandler {
     @Volatile var uri: Uri? = null
 
