@@ -53,4 +53,4 @@ tasks.register("checkWebLibs") {
         )
     }
 }
-tasks.named("preBuild") { dependsOn("checkWebLibs") }
+tasks.matching { it.name == "preBuild" }.configureEach { dependsOn("checkWebLibs") }
