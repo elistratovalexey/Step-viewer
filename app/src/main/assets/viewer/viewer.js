@@ -5,7 +5,6 @@ const canvas = document.getElementById('c');
 const post = (m) => { try { window.AndroidBridge && window.AndroidBridge.post(JSON.stringify(m)); } catch (e) {} };
 window.addEventListener('error', e => post({ type: 'error', text: String(e.message) }));
 
-/* ---------- рендерер и сцена ---------- */
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -37,11 +36,12 @@ const modelRoot = new THREE.Group(); scene.add(modelRoot);
 const edgeMat = new THREE.LineBasicMaterial({ color: 0x11161c });
 
 let parts = [];
-let radius = 1, triCount = 0;
+let radius = 1, triCount = 0, dims = [0, 0, 0];
 let wireOn = false, edgesOn = false, orthoOn = false, gridOn = false, darkOn = true;
 let deflection = 0.001;
+let selected = -1;
 
-/* ---------- OpenCascade (WASM) ---------- */
+// ---------- ядро OpenCascade ----------
 let occtPromise = null;
 function getOcct() {
   if (!occtPromise) {
@@ -58,7 +58,6 @@ function getOcct() {
   return occtPromise;
 }
 
-/* ---------- загрузка модели ---------- */
 const nextFrame = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
 
 async function open(url, name) {
@@ -86,10 +85,9 @@ async function open(url, name) {
       linearDeflection: deflection,
       angularDeflection: 0.5
     };
-    let res;
     const reader = occt[fn];
+    let res;
     try { res = reader.call(occt, data, params); } catch (e) { res = reader.call(occt, data, null); }
-
     if (!res || !res.success || !res.meshes || !res.meshes.length)
       throw new Error('В файле не найдена геометрия либо формат не поддерживается.');
 
@@ -105,8 +103,6 @@ async function open(url, name) {
     post({ type: 'error', text: (err && err.message) ? err.message : String(err) });
   }
 }
-
-let dims = [0, 0, 0];
 
 function build(res) {
   clearModel();
@@ -135,8 +131,9 @@ function build(res) {
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = (m.name && m.name.trim()) ? m.name : 'Деталь ' + (i + 1);
     g.add(mesh);
-    parts.push({ mesh, name: mesh.name, edges: null, visible: true, tris: (idx ? idx.length : pos.length / 3) / 3 });
-    triCount += (idx ? idx.length : pos.length / 3) / 3;
+    const tris = (idx ? idx.length : pos.length / 3) / 3;
+    parts.push({ mesh, name: mesh.name, edges: null, visible: true, tris });
+    triCount += tris;
   });
 
   if (!parts.length) throw new Error('Не удалось построить ни одной поверхности.');
@@ -157,6 +154,7 @@ function build(res) {
 }
 
 function clearModel() {
+  selected = -1;
   modelRoot.traverse(o => {
     if (o.geometry) o.geometry.dispose();
     if (o.material && o.material !== edgeMat) o.material.dispose();
@@ -166,7 +164,79 @@ function clearModel() {
   triCount = 0;
 }
 
-/* ---------- отображение ---------- */
+// ---------- выделение детали ----------
+const raycaster = new THREE.Raycaster();
+
+function clearSelection() {
+  if (selected >= 0 && parts[selected]) parts[selected].mesh.material.emissive.setHex(0x000000);
+  selected = -1;
+  post({ type: 'deselect' });
+}
+
+function selectPart(i) {
+  if (i < 0 || i >= parts.length) return;
+  if (selected >= 0 && parts[selected]) parts[selected].mesh.material.emissive.setHex(0x000000);
+  selected = i;
+  const p = parts[i];
+  p.mesh.material.emissive.setHex(0x1a3f7a);
+  post({ type: 'select', index: i, name: p.name, color: '#' + p.mesh.material.color.getHexString() });
+}
+
+function pick(cx, cy) {
+  if (!parts.length) return;
+  const rect = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2(
+    ((cx - rect.left) / rect.width) * 2 - 1,
+    -((cy - rect.top) / rect.height) * 2 + 1
+  );
+  raycaster.setFromCamera(ndc, camera);
+  const meshes = parts.filter(p => p.visible).map(p => p.mesh);
+  const hits = raycaster.intersectObjects(meshes, false);
+  if (!hits.length) { clearSelection(); return; }
+  const hit = hits[0].object;
+  selectPart(parts.findIndex(p => p.mesh === hit));
+}
+
+// ---------- жесты: тап / двойной тап / щипок ----------
+const active = new Set();
+let multi = false, tapOk = false, tapT = 0, tapX = 0, tapY = 0, lastTap = 0, pickTimer = 0;
+
+canvas.addEventListener('pointerdown', (e) => {
+  active.add(e.pointerId);
+  if (active.size === 1) {
+    multi = false; tapOk = true; tapT = Date.now(); tapX = e.clientX; tapY = e.clientY;
+  } else {
+    multi = true; tapOk = false; clearTimeout(pickTimer);
+  }
+});
+
+canvas.addEventListener('pointermove', (e) => {
+  if (tapOk && (Math.abs(e.clientX - tapX) > 12 || Math.abs(e.clientY - tapY) > 12)) tapOk = false;
+});
+
+canvas.addEventListener('pointerup', (e) => {
+  active.delete(e.pointerId);
+  const wasTap = tapOk && !multi && active.size === 0 && (Date.now() - tapT) < 300;
+  if (active.size === 0) { tapOk = false; multi = false; }
+  if (!wasTap) return;
+  const now = Date.now();
+  const x = e.clientX, y = e.clientY;
+  if (now - lastTap < 320) {
+    clearTimeout(pickTimer); lastTap = 0; fit();
+  } else {
+    lastTap = now;
+    clearTimeout(pickTimer);
+    pickTimer = setTimeout(() => pick(x, y), 240);
+  }
+});
+
+canvas.addEventListener('pointercancel', (e) => {
+  active.delete(e.pointerId);
+  tapOk = false;
+  if (active.size === 0) multi = false;
+});
+
+// ---------- отображение ----------
 function ensureEdges(p) {
   if (p.edges) return;
   if (p.tris > 400000) { post({ type: 'toast', text: 'Слишком много граней для рёбер: ' + p.name }); return; }
@@ -231,16 +301,7 @@ function tick() {
 }
 resize(); tick();
 
-/* двойной тап — вписать */
-let lastTap = 0;
-canvas.addEventListener('pointerup', (e) => {
-  if (e.pointerType !== 'touch') return;
-  const now = Date.now();
-  if (now - lastTap < 300) fit();
-  lastTap = now;
-});
-
-/* ---------- API для Kotlin ---------- */
+// ---------- API для Kotlin ----------
 window.SV = {
   open,
   clear: clearModel,
@@ -267,6 +328,13 @@ window.SV = {
       const v = arr[i] !== false;
       p.visible = v; p.mesh.visible = v;
     });
+    if (selected >= 0 && parts[selected] && !parts[selected].visible) clearSelection();
+  },
+  clearSelection,
+  setColor: (hex) => {
+    if (selected < 0 || !parts[selected]) return;
+    parts[selected].mesh.material.color.set(hex);
+    post({ type: 'color', index: selected, color: hex });
   }
 };
 
