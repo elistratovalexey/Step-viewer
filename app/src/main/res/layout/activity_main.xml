@@ -3,13 +3,14 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical">
+    android:orientation="vertical"
+    android:background="#141922">
 
     <androidx.appcompat.widget.Toolbar
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="@color/toolbar"
+        android:background="#10151c"
         android:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar"
         app:popupTheme="@style/ThemeOverlay.AppCompat.DayNight"
         app:titleTextAppearance="@style/TextAppearance.AppCompat.Widget.ActionBar.Title" />
@@ -24,6 +25,21 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
 
+        <TextView
+            android:id="@+id/measureHint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|center_horizontal"
+            android:layout_marginTop="12dp"
+            android:background="#E610151c"
+            android:paddingLeft="14dp"
+            android:paddingRight="14dp"
+            android:paddingTop="7dp"
+            android:paddingBottom="7dp"
+            android:textColor="#FDE68A"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
         <LinearLayout
             android:id="@+id/empty"
             android:layout_width="match_parent"
@@ -31,14 +47,13 @@
             android:gravity="center"
             android:orientation="vertical"
             android:padding="24dp">
-
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:gravity="center"
                 android:text="@string/empty_hint"
+                android:textColor="#CFD8DC"
                 android:textSize="16sp" />
-
             <Button
                 android:id="@+id/btnOpen"
                 android:layout_width="wrap_content"
@@ -55,11 +70,7 @@
             android:gravity="center"
             android:orientation="vertical"
             android:visibility="gone">
-
-            <ProgressBar
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content" />
-
+            <ProgressBar android:layout_width="wrap_content" android:layout_height="wrap_content" />
             <TextView
                 android:id="@+id/status"
                 android:layout_width="wrap_content"
@@ -68,42 +79,98 @@
                 android:textColor="#FFFFFF"
                 android:textSize="14sp" />
         </LinearLayout>
+    </FrameLayout>
+
+    <LinearLayout
+        android:id="@+id/deck"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="#10151c"
+        android:paddingTop="4dp"
+        android:paddingBottom="6dp"
+        android:visibility="gone">
 
         <HorizontalScrollView
-            android:id="@+id/bottomBar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_gravity="bottom"
-            android:background="#CC263238"
-            android:scrollbars="none"
-            android:visibility="gone">
-
+            android:scrollbars="horizontal"
+            android:scrollbarSize="3dp"
+            android:scrollbarThumbHorizontal="@drawable/scroll_thumb">
             <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal">
-
-                <Button android:id="@+id/btnFit" style="?attr/borderlessButtonStyle"
-                    android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:minWidth="0dp" android:textAllCaps="false" android:textColor="#FFFFFF"
-                    android:textSize="13sp" android:text="Вписать" />
-                <Button android:id="@+id/btnIso" style="?attr/borderlessButtonStyle"
-                    android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:minWidth="0dp" android:textAllCaps="false" android:textColor="#FFFFFF"
-                    android:textSize="13sp" android:text="Изо" />
-                <Button android:id="@+id/btnWire" style="?attr/borderlessButtonStyle"
-                    android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:minWidth="0dp" android:textAllCaps="false" android:textColor="#FFFFFF"
-                    android:textSize="13sp" android:text="Каркас" />
-                <Button android:id="@+id/btnEdges" style="?attr/borderlessButtonStyle"
-                    android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:minWidth="0dp" android:textAllCaps="false" android:textColor="#FFFFFF"
-                    android:textSize="13sp" android:text="Рёбра" />
-                <Button android:id="@+id/btnOrtho" style="?attr/borderlessButtonStyle"
-                    android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:minWidth="0dp" android:textAllCaps="false" android:textColor="#FFFFFF"
-                    android:textSize="13sp" android:text="Орто" />
+                android:orientation="horizontal"
+                android:paddingLeft="4dp"
+                android:paddingRight="4dp">
+                <Button android:id="@+id/modeSelect" style="@style/DeckButton" android:text="Выбор" />
+                <Button android:id="@+id/modeMeasure" style="@style/DeckButton" android:text="Измерение" />
+                <Button android:id="@+id/btnWire" style="@style/DeckButton" android:text="Каркас" />
+                <Button android:id="@+id/btnEdges" style="@style/DeckButton" android:text="Рёбра" />
+                <Button android:id="@+id/btnOrtho" style="@style/DeckButton" android:text="Орто" />
+                <Button android:id="@+id/btnGrid" style="@style/DeckButton" android:text="Сетка" />
+                <Button android:id="@+id/btnFit" style="@style/DeckButton" android:text="Вписать" />
+                <Button android:id="@+id/btnIso" style="@style/DeckButton" android:text="Изо" />
             </LinearLayout>
         </HorizontalScrollView>
-    </FrameLayout>
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:scrollbars="horizontal"
+            android:scrollbarSize="3dp"
+            android:scrollbarThumbHorizontal="@drawable/scroll_thumb">
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingLeft="4dp"
+                android:paddingRight="4dp">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Сечение"
+                    android:textColor="#78909C"
+                    android:textSize="12sp"
+                    android:paddingLeft="8dp"
+                    android:paddingRight="6dp" />
+                <Button android:id="@+id/secAxisX" style="@style/DeckButton" android:text="X" />
+                <Button android:id="@+id/secAxisY" style="@style/DeckButton" android:text="Y" />
+                <Button android:id="@+id/secAxisZ" style="@style/DeckButton" android:text="Z" />
+                <Button android:id="@+id/secEnable" style="@style/DeckButton" android:text="Вкл" />
+                <Button android:id="@+id/secFlip" style="@style/DeckButton" android:text="Инверсия" />
+                <SeekBar
+                    android:id="@+id/secSeek"
+                    android:layout_width="170dp"
+                    android:layout_height="40dp"
+                    android:max="200"
+                    android:progress="100"
+                    android:progressTint="#F43F5E"
+                    android:thumbTint="#F43F5E" />
+                <Button android:id="@+id/secShow" style="@style/DeckButton" android:text="Плоскости" />
+            </LinearLayout>
+        </HorizontalScrollView>
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:scrollbars="horizontal"
+            android:scrollbarSize="3dp"
+            android:scrollbarThumbHorizontal="@drawable/scroll_thumb">
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingLeft="4dp"
+                android:paddingRight="4dp">
+                <Button android:id="@+id/btnMeasList" style="@style/DeckButton" android:text="Измерения (0)" />
+                <Button android:id="@+id/btnMeasClear" style="@style/DeckButton" android:text="Очистить" />
+                <Button android:id="@+id/btnSave" style="@style/DeckButton" android:text="Сохранить" />
+                <Button android:id="@+id/btnExport" style="@style/DeckButton" android:text="Экспорт STL" />
+            </LinearLayout>
+        </HorizontalScrollView>
+    </LinearLayout>
 </LinearLayout>
