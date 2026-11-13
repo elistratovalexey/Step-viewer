@@ -17,15 +17,15 @@ Daemon will be stopped at the end of the build
 > Task :app:parseDebugLocalResources
 > Task :app:processDebugMainManifest
 > Task :app:processDebugManifest
+> Task :app:processDebugManifestForPackage
 > Task :app:javaPreCompileDebug
 > Task :app:mergeDebugShaders
 > Task :app:compileDebugShaders NO-SOURCE
 > Task :app:generateDebugAssets UP-TO-DATE
 > Task :app:mergeDebugAssets
-> Task :app:processDebugManifestForPackage
-> Task :app:compressDebugAssets
 > Task :app:desugarDebugFileDependencies
 > Task :app:mergeDebugStartupProfile
+> Task :app:compressDebugAssets
 > Task :app:mergeDebugJniLibFolders
 > Task :app:checkDebugDuplicateClasses
 > Task :app:mergeDebugNativeLibs NO-SOURCE
@@ -38,12 +38,25 @@ Daemon will be stopped at the end of the build
 > Task :app:mergeExtDexDebug
 
 > Task :app:compileDebugKotlin FAILED
-e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:33:40 Unresolved reference: ModelPathHandler
-e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:69:24 Unresolved reference: ModelPathHandler
-e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:102:41 Unresolved reference: ViewerAssetsHandler
-e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:207:22 Variable expected
-e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/WebHandlers.kt:61:1 Unclosed comment
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build-1794591443619.json
+e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:109:34 Unresolved reference: deck
+e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:110:34 Unresolved reference: measureHint
+e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:114:35 Unresolved reference: btnGrid
+e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:115:41 Unresolved reference: modeSelect
+e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:116:42 Unresolved reference: modeMeasure
+e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:117:34 Unresolved reference: secAxisX
+e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:118:34 Unresolved reference: secAxisY
+e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:119:34 Unresolved reference: secAxisZ
+e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:120:39 Unresolved reference: secEnable
+e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:121:37 Unresolved reference: secFlip
+e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:122:37 Unresolved reference: secShow
+e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:123:37 Unresolved reference: secSeek
+e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:124:39 Unresolved reference: btnMeasList
+e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:159:35 Unresolved reference: btnMeasClear
+e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:160:35 Unresolved reference: btnSave
+e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:161:35 Unresolved reference: btnExport
+e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:348:18 Unresolved reference: action_load_project
+e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:349:18 Unresolved reference: action_reset
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build-1794597261885.json
 
 FAILURE: Build failed with an exception.
 
@@ -252,5 +265,5 @@ Caused by: org.jetbrains.kotlin.gradle.tasks.CompilationErrorException: Compilat
 	... 2 more
 
 
-BUILD FAILED in 17s
+BUILD FAILED in 27s
 30 actionable tasks: 30 executed
