@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.StepViewer" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/toolbar</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="android:statusBarColor">@color/toolbar</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>
