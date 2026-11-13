@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item android:id="@+id/action_open" android:icon="@drawable/ic_open"
+        android:title="Открыть" app:showAsAction="always" />
+    <item android:id="@+id/action_fit" android:icon="@drawable/ic_fit"
+        android:title="Вписать" app:showAsAction="always" />
+
+    <item android:title="Вид" app:showAsAction="never">
+        <menu>
+            <item android:id="@+id/view_iso" android:title="Изометрия" />
+            <item android:id="@+id/view_front" android:title="Спереди" />
+            <item android:id="@+id/view_back" android:title="Сзади" />
+            <item android:id="@+id/view_top" android:title="Сверху" />
+            <item android:id="@+id/view_bottom" android:title="Снизу" />
+            <item android:id="@+id/view_right" android:title="Справа" />
+            <item android:id="@+id/view_left" android:title="Слева" />
+        </menu>
+    </item>
+
+    <group android:checkableBehavior="all">
+        <item android:id="@+id/action_ortho" android:checkable="true" android:title="Ортографическая проекция" />
+        <item android:id="@+id/action_wire" android:checkable="true" android:title="Каркас" />
+        <item android:id="@+id/action_edges" android:checkable="true" android:title="Рёбра" />
+        <item android:id="@+id/action_grid" android:checkable="true" android:title="Сетка и оси" />
+        <item android:id="@+id/action_dark" android:checkable="true" android:checked="true" android:title="Тёмный фон" />
+    </group>
+
+    <item android:id="@+id/action_parts" android:title="Детали" />
+
+    <item android:title="Качество триангуляции">
+        <menu>
+            <group android:checkableBehavior="single">
+                <item android:id="@+id/q_low" android:title="Быстро (грубо)" />
+                <item android:id="@+id/q_mid" android:checked="true" android:title="Обычное" />
+                <item android:id="@+id/q_high" android:title="Точное (медленно)" />
+            </group>
+        </menu>
+    </item>
+
+    <item android:id="@+id/action_info" android:title="Свойства модели" />
+</menu>
