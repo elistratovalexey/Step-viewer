@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">STEP Viewer</string>
+    <string name="empty_hint">Откройте файл .STEP / .STP\n(также поддерживаются IGES и BREP)</string>
+    <string name="open_file">Открыть файл</string>
+</resources>
