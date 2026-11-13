@@ -1,12 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
-
-    <item android:id="@+id/action_open" android:icon="@drawable/ic_open"
-        android:title="Открыть" app:showAsAction="always" />
-    <item android:id="@+id/action_fit" android:icon="@drawable/ic_fit"
-        android:title="Вписать" app:showAsAction="always" />
-
+    <item android:id="@+id/action_open" android:icon="@drawable/ic_open" android:title="Открыть" app:showAsAction="always" />
+    <item android:id="@+id/action_fit" android:icon="@drawable/ic_fit" android:title="Вписать" app:showAsAction="always" />
     <item android:title="Вид" app:showAsAction="never">
         <menu>
             <item android:id="@+id/view_iso" android:title="Изометрия" />
@@ -18,7 +14,6 @@
             <item android:id="@+id/view_left" android:title="Слева" />
         </menu>
     </item>
-
     <group android:checkableBehavior="all">
         <item android:id="@+id/action_ortho" android:checkable="true" android:title="Ортографическая проекция" />
         <item android:id="@+id/action_wire" android:checkable="true" android:title="Каркас" />
@@ -26,9 +21,9 @@
         <item android:id="@+id/action_grid" android:checkable="true" android:title="Сетка и оси" />
         <item android:id="@+id/action_dark" android:checkable="true" android:checked="true" android:title="Тёмный фон" />
     </group>
-
     <item android:id="@+id/action_parts" android:title="Детали" />
-
+    <item android:id="@+id/action_load_project" android:title="Загрузить проект (.json)" />
+    <item android:id="@+id/action_reset" android:title="Сбросить изменения" />
     <item android:title="Качество триангуляции">
         <menu>
             <group android:checkableBehavior="single">
@@ -38,6 +33,5 @@
             </group>
         </menu>
     </item>
-
     <item android:id="@+id/action_info" android:title="Свойства модели" />
 </menu>
