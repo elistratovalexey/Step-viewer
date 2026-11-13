@@ -30,6 +30,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
     private lateinit var empty: View
     private lateinit var bottom: View
+    private lateinit var bWire: Button
+    private lateinit var bEdges: Button
+    private lateinit var bOrtho: Button
     private lateinit var modelHandler: ModelPathHandler
 
     private var ready = false
@@ -41,6 +44,9 @@ class MainActivity : AppCompatActivity() {
     private var names = arrayOf<String>()
     private var visible = booleanArrayOf()
     private var info = "Модель не загружена"
+    private var stats = ""
+    private var selIndex = -1
+    private var selName = ""
 
     private var wire = false
     private var edges = false
@@ -48,6 +54,19 @@ class MainActivity : AppCompatActivity() {
     private var grid = false
     private var dark = true
     private var deflection = 0.001
+
+    private val palette = arrayOf(
+        "Стальной" to "#9fb0c0",
+        "Красный" to "#e53935",
+        "Оранжевый" to "#fb8c00",
+        "Жёлтый" to "#fdd835",
+        "Зелёный" to "#43a047",
+        "Бирюзовый" to "#00acc1",
+        "Синий" to "#1e88e5",
+        "Фиолетовый" to "#8e24aa",
+        "Белый" to "#f5f5f5",
+        "Тёмно-серый" to "#455a64"
+    )
 
     private val picker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { u ->
         if (u != null) open(u)
@@ -65,6 +84,9 @@ class MainActivity : AppCompatActivity() {
         status = findViewById(R.id.status)
         empty = findViewById(R.id.empty)
         bottom = findViewById(R.id.bottomBar)
+        bWire = findViewById(R.id.btnWire)
+        bEdges = findViewById(R.id.btnEdges)
+        bOrtho = findViewById(R.id.btnOrtho)
 
         modelHandler = ModelPathHandler(contentResolver)
         initWeb()
@@ -72,9 +94,10 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnOpen).setOnClickListener { picker.launch(arrayOf("*/*")) }
         findViewById<Button>(R.id.btnFit).setOnClickListener { js("SV.fit()") }
         findViewById<Button>(R.id.btnIso).setOnClickListener { js("SV.setView('iso')") }
-        findViewById<Button>(R.id.btnWire).setOnClickListener { toggleWire() }
-        findViewById<Button>(R.id.btnEdges).setOnClickListener { toggleEdges() }
-        findViewById<Button>(R.id.btnOrtho).setOnClickListener { toggleOrtho() }
+        bWire.setOnClickListener { toggleWire() }
+        bEdges.setOnClickListener { toggleEdges() }
+        bOrtho.setOnClickListener { toggleOrtho() }
+        updateBottomBar()
 
         val saved = savedInstanceState?.getString("uri")
         if (saved != null) open(Uri.parse(saved)) else handleIntent(intent)
@@ -152,10 +175,22 @@ class MainActivity : AppCompatActivity() {
             }
             "status" -> status.text = o.optString("text")
             "toast" -> Toast.makeText(this, o.optString("text"), Toast.LENGTH_SHORT).show()
+            "select" -> {
+                selIndex = o.optInt("index", -1)
+                selName = o.optString("name")
+                supportActionBar?.subtitle = "▣ $selName"
+                if (selIndex >= 0) selectionDialog()
+            }
+            "deselect" -> {
+                selIndex = -1
+                selName = ""
+                supportActionBar?.subtitle = stats
+            }
             "loaded" -> {
                 loading.visibility = View.GONE
                 empty.visibility = View.GONE
                 bottom.visibility = View.VISIBLE
+                selIndex = -1
                 val arr = o.optJSONArray("parts") ?: JSONArray()
                 names = Array(arr.length()) { i -> arr.optString(i).ifBlank { "Деталь ${i + 1}" } }
                 visible = BooleanArray(names.size) { true }
@@ -170,8 +205,10 @@ class MainActivity : AppCompatActivity() {
                         .append(fmt(d(0))).append(" × ").append(fmt(d(1))).append(" × ").append(fmt(d(2))).append('\n')
                     append("Время загрузки: ").append(fmt(o.optDouble("time") / 1000.0)).append(" с")
                 }
+                stats = "${names.size} дет. · ${o.optInt("triangles")} треуг."
                 supportActionBar?.title = fileName
-                supportActionBar?.subtitle = "${names.size} дет. · ${o.optInt("triangles")} треуг."
+                supportActionBar?.subtitle = stats
+                updateBottomBar()
             }
             "error" -> {
                 loading.visibility = View.GONE
@@ -193,6 +230,7 @@ class MainActivity : AppCompatActivity() {
         fileName = meta.first
         fileSize = meta.second
         names = arrayOf(); visible = booleanArrayOf()
+        selIndex = -1; stats = ""
         empty.visibility = View.GONE
         bottom.visibility = View.GONE
         loading.visibility = View.VISIBLE
@@ -231,14 +269,57 @@ class MainActivity : AppCompatActivity() {
         "SV.setGrid($grid), SV.setDark($dark), SV.setQuality($deflection)"
     )
 
-    private fun toggleWire() { wire = !wire; js("SV.setWireframe($wire)"); invalidateOptionsMenu() }
-    private fun toggleEdges() { edges = !edges; js("SV.setEdges($edges)"); invalidateOptionsMenu() }
-    private fun toggleOrtho() { ortho = !ortho; js("SV.setOrtho($ortho)"); invalidateOptionsMenu() }
+    private fun styleToggle(b: Button, on: Boolean) {
+        b.setBackgroundColor(if (on) 0xFF1E88E5.toInt() else 0x00000000)
+        b.setTextColor(if (on) 0xFFFFFFFF.toInt() else 0xFFB0BEC5.toInt())
+    }
+
+    private fun updateBottomBar() {
+        styleToggle(bWire, wire)
+        styleToggle(bEdges, edges)
+        styleToggle(bOrtho, ortho)
+    }
+
+    private fun toggleWire() { wire = !wire; js("SV.setWireframe($wire)"); updateBottomBar(); invalidateOptionsMenu() }
+    private fun toggleEdges() { edges = !edges; js("SV.setEdges($edges)"); updateBottomBar(); invalidateOptionsMenu() }
+    private fun toggleOrtho() { ortho = !ortho; js("SV.setOrtho($ortho)"); updateBottomBar(); invalidateOptionsMenu() }
 
     private fun pushVisibility() {
         val a = JSONArray()
         visible.forEach { a.put(it) }
         js("SV.setPartsVisible($a)")
+    }
+
+    private fun selectionDialog() {
+        if (selIndex < 0 || selIndex >= visible.size) return
+        val actions = arrayOf(
+            "Изменить цвет",
+            "Скрыть деталь",
+            "Показать только её",
+            "Показать все детали",
+            "Снять выделение"
+        )
+        AlertDialog.Builder(this)
+            .setTitle(selName)
+            .setItems(actions) { _, w ->
+                when (w) {
+                    0 -> colorDialog()
+                    1 -> { visible[selIndex] = false; pushVisibility(); js("SV.clearSelection()") }
+                    2 -> { for (i in visible.indices) visible[i] = (i == selIndex); pushVisibility() }
+                    3 -> { for (i in visible.indices) visible[i] = true; pushVisibility() }
+                    4 -> js("SV.clearSelection()")
+                }
+            }
+            .show()
+    }
+
+    private fun colorDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Цвет: $selName")
+            .setItems(palette.map { it.first }.toTypedArray()) { _, w ->
+                js("SV.setColor(${JSONObject.quote(palette[w].second)})")
+            }
+            .show()
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
