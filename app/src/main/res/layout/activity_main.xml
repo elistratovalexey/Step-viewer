@@ -103,14 +103,14 @@
                 android:orientation="horizontal"
                 android:paddingLeft="4dp"
                 android:paddingRight="4dp">
-                <Button android:id="@+id/modeSelect" style="@style/DeckButton" android:text="Выбор" />
-                <Button android:id="@+id/modeMeasure" style="@style/DeckButton" android:text="Измерение" />
-                <Button android:id="@+id/btnWire" style="@style/DeckButton" android:text="Каркас" />
-                <Button android:id="@+id/btnEdges" style="@style/DeckButton" android:text="Рёбра" />
-                <Button android:id="@+id/btnOrtho" style="@style/DeckButton" android:text="Орто" />
-                <Button android:id="@+id/btnGrid" style="@style/DeckButton" android:text="Сетка" />
-                <Button android:id="@+id/btnFit" style="@style/DeckButton" android:text="Вписать" />
-                <Button android:id="@+id/btnIso" style="@style/DeckButton" android:text="Изо" />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/modeSelect" style="@style/DeckButton" android:text="Выбор" />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/modeMeasure" style="@style/DeckButton" android:text="Измерение" />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnWire" style="@style/DeckButton" android:text="Каркас" />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnEdges" style="@style/DeckButton" android:text="Рёбра" />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnOrtho" style="@style/DeckButton" android:text="Орто" />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnGrid" style="@style/DeckButton" android:text="Сетка" />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnFit" style="@style/DeckButton" android:text="Вписать" />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnIso" style="@style/DeckButton" android:text="Изо" />
             </LinearLayout>
         </HorizontalScrollView>
 
@@ -136,11 +136,11 @@
                     android:textSize="12sp"
                     android:paddingLeft="8dp"
                     android:paddingRight="6dp" />
-                <Button android:id="@+id/secAxisX" style="@style/DeckButton" android:text="X" />
-                <Button android:id="@+id/secAxisY" style="@style/DeckButton" android:text="Y" />
-                <Button android:id="@+id/secAxisZ" style="@style/DeckButton" android:text="Z" />
-                <Button android:id="@+id/secEnable" style="@style/DeckButton" android:text="Вкл" />
-                <Button android:id="@+id/secFlip" style="@style/DeckButton" android:text="Инверсия" />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/secAxisX" style="@style/DeckButton" android:text="X" />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/secAxisY" style="@style/DeckButton" android:text="Y" />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/secAxisZ" style="@style/DeckButton" android:text="Z" />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/secEnable" style="@style/DeckButton" android:text="Вкл" />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/secFlip" style="@style/DeckButton" android:text="Инверсия" />
                 <SeekBar
                     android:id="@+id/secSeek"
                     android:layout_width="170dp"
@@ -149,7 +149,7 @@
                     android:progress="100"
                     android:progressTint="#F43F5E"
                     android:thumbTint="#F43F5E" />
-                <Button android:id="@+id/secShow" style="@style/DeckButton" android:text="Плоскости" />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/secShow" style="@style/DeckButton" android:text="Плоскости" />
             </LinearLayout>
         </HorizontalScrollView>
 
@@ -166,10 +166,11 @@
                 android:orientation="horizontal"
                 android:paddingLeft="4dp"
                 android:paddingRight="4dp">
-                <Button android:id="@+id/btnMeasList" style="@style/DeckButton" android:text="Измерения (0)" />
-                <Button android:id="@+id/btnMeasClear" style="@style/DeckButton" android:text="Очистить" />
-                <Button android:id="@+id/btnSave" style="@style/DeckButton" android:text="Сохранить" />
-                <Button android:id="@+id/btnExport" style="@style/DeckButton" android:text="Экспорт STL" />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnMeasList" style="@style/DeckButton" android:text="Измерения (0)" />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnMeasClear" style="@style/DeckButton" android:text="Очистить" />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnSave" style="@style/DeckButton" android:text="Проект JSON" />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnStep" style="@style/DeckButton" android:text="Записать STEP" />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnExport" style="@style/DeckButton" android:text="Экспорт STL" />
             </LinearLayout>
         </HorizontalScrollView>
     </LinearLayout>
