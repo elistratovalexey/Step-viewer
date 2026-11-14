@@ -5,11 +5,13 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
+import android.text.InputType
 import android.util.Base64
 import android.util.Log
 import android.view.Menu
@@ -17,6 +19,9 @@ import android.view.MenuItem
 import android.view.View
 import android.webkit.*
 import android.widget.Button
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
@@ -59,6 +64,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var secSeek: SeekBar
     private lateinit var bMeasList: Button
     private lateinit var modelHandler: ModelPathHandler
+    private lateinit var prefs: SharedPreferences
 
     private var ready = false
     private var pending: Uri? = null
@@ -80,6 +86,7 @@ class MainActivity : AppCompatActivity() {
     private var grid = false
     private var dark = true
     private var deflection = 0.001
+    private var usedDeflection = 0.001
     private var latestState = ""
     private var measList = JSONArray()
     private var fileBuf = ByteArrayOutputStream()
@@ -87,6 +94,11 @@ class MainActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private var autosave: Runnable? = null
     private val secState = JSONObject("""{"show":true,"axis":"x","x":{"on":false,"off":0,"flip":false},"y":{"on":false,"off":0,"flip":false},"z":{"on":false,"off":0,"flip":false}}""")
+
+    private var maxTrisModel = 1500000
+    private var maxTrisStl = 600000
+    private var maxTrisStep = 20000
+    private var maxTrisEdges = 400000
 
     private val palette = arrayOf(
         "Стальной" to "#9fb0c0", "Красный" to "#e53935", "Оранжевый" to "#fb8c00",
@@ -108,6 +120,8 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        prefs = getSharedPreferences("settings", MODE_PRIVATE)
+        loadLimits()
         toolbar = findViewById(R.id.toolbar)
         setSupportActionBar(toolbar)
         supportActionBar?.title = getString(R.string.app_name)
@@ -139,6 +153,87 @@ class MainActivity : AppCompatActivity() {
         wireUi()
         val saved = savedInstanceState?.getString("uri")
         if (saved != null) open(Uri.parse(saved)) else handleIntent(intent)
+    }
+
+    private fun loadLimits() {
+        maxTrisModel = prefs.getInt("maxTrisModel", 1500000)
+        maxTrisStl = prefs.getInt("maxTrisStl", 600000)
+        maxTrisStep = prefs.getInt("maxTrisStep", 20000)
+        maxTrisEdges = prefs.getInt("maxTrisEdges", 400000)
+    }
+
+    private fun saveLimits() {
+        prefs.edit()
+            .putInt("maxTrisModel", maxTrisModel)
+            .putInt("maxTrisStl", maxTrisStl)
+            .putInt("maxTrisStep", maxTrisStep)
+            .putInt("maxTrisEdges", maxTrisEdges)
+            .apply()
+    }
+
+    private fun pushLimits() = js("SV.setLimits({model:$maxTrisModel,stl:$maxTrisStl,step:$maxTrisStep,edges:$maxTrisEdges})")
+
+    private fun settingsDialog() {
+        val pad = (resources.displayMetrics.density * 18).toInt()
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(pad, pad / 2, pad, 0)
+
+        fun field(label: String, value: Int): EditText {
+            val t = TextView(this)
+            t.text = label
+            t.textSize = 12f
+            t.setPadding(0, pad / 2, 0, 0)
+            box.addView(t)
+            val e = EditText(this)
+            e.inputType = InputType.TYPE_CLASS_NUMBER
+            e.setText(value.toString())
+            e.textSize = 15f
+            box.addView(e)
+            return e
+        }
+
+        val eModel = field("Макс. треугольников в модели (0 = без лимита)", maxTrisModel)
+        val eStl = field("Макс. треугольников для экспорта STL (0 = без лимита)", maxTrisStl)
+        val eStep = field("Макс. треугольников для экспорта STEP (0 = без лимита)", maxTrisStep)
+        val eEdges = field("Макс. треугольников на деталь для рёбер (0 = без лимита)", maxTrisEdges)
+
+        val note = TextView(this)
+        note.text = "Если сетка модели тяжелее лимита, шаг триангуляции автоматически укрупняется и разбор повторяется (до 5 попыток). Изменение первого поля перезагрузит текущую модель."
+        note.textSize = 11f
+        note.setPadding(0, pad, 0, pad / 2)
+        box.addView(note)
+
+        val scroll = ScrollView(this)
+        scroll.addView(box)
+
+        fun read(e: EditText, def: Int): Int {
+            val v = e.text.toString().trim().toIntOrNull() ?: return def
+            return v.coerceIn(0, 20000000)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Настройки")
+            .setView(scroll)
+            .setPositiveButton("Сохранить") { _, _ ->
+                val oldModel = maxTrisModel
+                maxTrisModel = read(eModel, maxTrisModel)
+                maxTrisStl = read(eStl, maxTrisStl)
+                maxTrisStep = read(eStep, maxTrisStep)
+                maxTrisEdges = read(eEdges, maxTrisEdges)
+                saveLimits()
+                pushLimits()
+                Toast.makeText(this, "Настройки сохранены", Toast.LENGTH_SHORT).show()
+                if (oldModel != maxTrisModel) current?.let { open(it) }
+            }
+            .setNeutralButton("По умолчанию") { _, _ ->
+                maxTrisModel = 1500000; maxTrisStl = 600000; maxTrisStep = 20000; maxTrisEdges = 400000
+                saveLimits(); pushLimits()
+                Toast.makeText(this, "Значения сброшены", Toast.LENGTH_SHORT).show()
+                current?.let { open(it) }
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
     }
 
     private fun wireUi() {
@@ -199,7 +294,7 @@ class MainActivity : AppCompatActivity() {
         web.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(v: WebView, r: WebResourceRequest) = loader.shouldInterceptRequest(r.url)
             override fun onRenderProcessGone(v: WebView, d: RenderProcessGoneDetail): Boolean {
-                Toast.makeText(this@MainActivity, "Не хватило памяти. Попробуйте качество «Быстро».", Toast.LENGTH_LONG).show(); recreate(); return true
+                Toast.makeText(this@MainActivity, "Не хватило памяти. Уменьшите лимит треугольников в Настройках.", Toast.LENGTH_LONG).show(); recreate(); return true
             }
         }
         web.webChromeClient = object : WebChromeClient() {
@@ -238,6 +333,7 @@ class MainActivity : AppCompatActivity() {
             "loaded" -> {
                 loading.visibility = View.GONE; empty.visibility = View.GONE; deck.visibility = View.VISIBLE
                 selIndex = -1
+                usedDeflection = o.optDouble("deflection", deflection)
                 val arr = o.optJSONArray("parts") ?: JSONArray()
                 names = Array(arr.length()) { i -> arr.optString(i).ifBlank { "Деталь ${i + 1}" } }
                 visible = BooleanArray(names.size) { true }
@@ -248,6 +344,8 @@ class MainActivity : AppCompatActivity() {
                     append("Размер: ").append(fmt(fileSize / 1048576.0)).append(" МБ\n")
                     append("Деталей: ").append(names.size).append('\n')
                     append("Треугольников: ").append(o.optInt("triangles")).append('\n')
+                    append("Шаг триангуляции: ").append(String.format(Locale.US, "%.5f", usedDeflection)).append('\n')
+                    append("Лимит треугольников: ").append(if (maxTrisModel == 0) "без лимита" else maxTrisModel.toString()).append('\n')
                     append("Габариты, мм: ").append(fmt(d(0))).append(" × ").append(fmt(d(1))).append(" × ").append(fmt(d(2))).append('\n')
                     append("Время загрузки: ").append(fmt(o.optDouble("time") / 1000.0)).append(" с")
                 }
@@ -293,7 +391,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun js(code: String) = web.evaluateJavascript("window.SV && ($code)", null)
     private fun pushSettings() = js(
-        "SV.setWireframe($wire), SV.setEdges($edges), SV.setOrtho($ortho), SV.setGrid($grid), SV.setDark($dark), SV.setQuality($deflection), SV.setSnap($snap), SV.setMode(${JSONObject.quote(mode)}), SV.setSection($secState)"
+        "SV.setWireframe($wire), SV.setEdges($edges), SV.setOrtho($ortho), SV.setGrid($grid), SV.setDark($dark), SV.setQuality($deflection), SV.setSnap($snap), SV.setMode(${JSONObject.quote(mode)}), SV.setSection($secState), SV.setLimits({model:$maxTrisModel,stl:$maxTrisStl,step:$maxTrisStep,edges:$maxTrisEdges})"
     )
 
     private fun chip(b: Button, on: Boolean, accent: Int = 0xFF1E88E5.toInt()) {
@@ -385,6 +483,7 @@ class MainActivity : AppCompatActivity() {
             R.id.action_grid -> { grid = !grid; js("SV.setGrid($grid)"); updateDeck() }
             R.id.action_dark -> { dark = !dark; js("SV.setDark($dark)") }
             R.id.action_parts -> partsDialog()
+            R.id.action_settings -> settingsDialog()
             R.id.action_info -> AlertDialog.Builder(this).setTitle("Свойства модели")
                 .setMessage("STEP Viewer ${BuildConfig.VERSION_NAME} (сборка ${BuildConfig.VERSION_CODE})\n\n$info")
                 .setPositiveButton("OK", null).show()
