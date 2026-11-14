@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 const canvas = document.getElementById('c');
 const post = (m) => { try { window.AndroidBridge && window.AndroidBridge.post(JSON.stringify(m)); } catch (e) {} };
 window.addEventListener('error', e => post({ type: 'error', text: String(e.message) }));
+const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt !== undefined) e.textContent = txt; return e; };
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -20,10 +21,8 @@ let camera = persp, halfH = 1;
 for (const c of [persp, ortho]) { c.up.set(0, 0, 1); c.position.set(1, -1, 0.8); }
 
 const controls = new OrbitControls(camera, canvas);
-controls.enableDamping = true;
-controls.dampingFactor = 0.12;
-controls.rotateSpeed = 0.85;
-controls.panSpeed = 0.9;
+controls.enableDamping = true; controls.dampingFactor = 0.12;
+controls.rotateSpeed = 0.85; controls.panSpeed = 0.9;
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.85));
 scene.add(new THREE.HemisphereLight(0xffffff, 0x30363f, 1.1));
@@ -34,27 +33,30 @@ let grid = null;
 const axes = new THREE.AxesHelper(1); axes.visible = false; scene.add(axes);
 const modelRoot = new THREE.Group(); scene.add(modelRoot);
 const measureRoot = new THREE.Group(); scene.add(measureRoot);
+const pointRoot = new THREE.Group(); scene.add(pointRoot);
 const sectionRoot = new THREE.Group(); scene.add(sectionRoot);
 const edgeMat = new THREE.LineBasicMaterial({ color: 0x0c1016 });
 
-let parts = [];
+let parts = [], origToPart = [], treeData = null, modelName = 'model.step';
 let radius = 1, triCount = 0, dims = [0, 0, 0], half = [1, 1, 1];
-let wireOn = false, edgesOn = false, orthoOn = false, gridOn = false, darkOn = true;
-let deflection = 0.001, mode = 'select', selected = -1;
-let measures = [], measId = 1, pendingPoint = null, pendingMarker = null;
-let originalStepText = null;
+let modelOffset = new THREE.Vector3();
+let wireOn = false, edgesOn = false, orthoOn = false, gridOn = false, darkOn = true, snapOn = true;
+let deflection = 0.001, mode = 'select', selected = -1, treeOpen = false;
+let measures = [], measId = 1, pendingPoint = null, pendingKind = 'surface', pendingMarker = null;
+let points = [], pointId = 1, lastPoint = null;
+let treeSel = new Set(), collapsed = new Set();
 let sectionState = { show: true, axis: 'x', x: { on: false, off: 0, flip: false }, y: { on: false, off: 0, flip: false }, z: { on: false, off: 0, flip: false } };
 const AX = { x: 0, y: 1, z: 2 };
+const kindColor = k => k === 'vertex' ? 0x22c55e : k === 'edge' ? 0x38bdf8 : 0xfbbf24;
+const kindRu = k => k === 'vertex' ? 'Вершина' : k === 'edge' ? 'Ребро' : 'Поверхность';
+const kindShort = k => k === 'vertex' ? 'В' : k === 'edge' ? 'Р' : 'П';
 
 let occtPromise = null;
 function getOcct() {
   if (!occtPromise) {
     occtPromise = (async () => {
       let factory = window.occtimportjs;
-      if (typeof factory !== 'function') {
-        const mod = await import('./lib/occt-import-js.js');
-        factory = mod.default || window.occtimportjs;
-      }
+      if (typeof factory !== 'function') { const mod = await import('./lib/occt-import-js.js'); factory = mod.default || window.occtimportjs; }
       if (typeof factory !== 'function') throw new Error('Не удалось загрузить ядро OpenCascade.');
       return await factory({ locateFile: (f) => new URL('lib/' + f, document.baseURI).href });
     })();
@@ -65,34 +67,34 @@ const nextFrame = () => new Promise(r => requestAnimationFrame(() => setTimeout(
 
 async function open(url, name) {
   try {
+    modelName = name || 'model.step';
     post({ type: 'status', text: 'Чтение файла…' }); await nextFrame();
     const resp = await fetch(url, { cache: 'no-store' });
     if (!resp.ok) throw new Error('Не удалось прочитать файл (' + resp.status + ')');
     const data = new Uint8Array(await resp.arrayBuffer());
-    const ext = (name.split('.').pop() || '').toLowerCase();
-    originalStepText = (ext === 'step' || ext === 'stp') ? new TextDecoder('utf-8').decode(data) : null;
     post({ type: 'status', text: 'Запуск ядра OpenCascade…' }); await nextFrame();
     const occt = await getOcct();
     post({ type: 'status', text: 'Разбор геометрии и триангуляция…' }); await nextFrame();
     const t0 = performance.now();
+    const ext = (name.split('.').pop() || '').toLowerCase();
     const fn = (ext === 'igs' || ext === 'iges') ? 'ReadIgesFile' : (ext === 'brep') ? 'ReadBrepFile' : 'ReadStepFile';
     const params = { linearUnit: 'millimeter', linearDeflectionType: 'bounding_box_ratio', linearDeflection: deflection, angularDeflection: 0.5 };
     const reader = occt[fn];
     let res;
     try { res = reader.call(occt, data, params); } catch (e) { res = reader.call(occt, data, null); }
     if (!res || !res.success || !res.meshes || !res.meshes.length) throw new Error('В файле не найдена геометрия либо формат не поддерживается.');
-    build(res);
-    post({ type: 'loaded', parts: parts.map(p => p.name), triangles: triCount, bbox: dims, time: performance.now() - t0 });
-    postMeasures(); postState();
+    build(res, name);
+    post({ type: 'loaded', parts: parts.map(p => p.name), triangles: triCount, bbox: dims, time: performance.now() - t0, tree: !!treeData });
+    postMeasures(); postPoints(); postVisibility(); postState();
   } catch (err) { post({ type: 'error', text: (err && err.message) ? err.message : String(err) }); }
 }
 
-function build(res) {
+function build(res, name) {
   clearModel();
-  const g = new THREE.Group(); triCount = 0;
+  const g = new THREE.Group(); triCount = 0; origToPart = [];
   res.meshes.forEach((m, i) => {
     const pos = m.attributes && m.attributes.position && m.attributes.position.array;
-    if (!pos || pos.length < 9) return;
+    if (!pos || pos.length < 9) { origToPart[i] = -1; return; }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     const nrm = m.attributes.normal && m.attributes.normal.array;
@@ -106,6 +108,7 @@ function build(res) {
     mesh.name = (m.name && m.name.trim()) ? m.name : 'Деталь ' + (i + 1);
     g.add(mesh);
     const tris = (idx ? idx.length : pos.length / 3) / 3;
+    origToPart[i] = parts.length;
     parts.push({ mesh, name: mesh.name, baseColor: '#' + color.getHexString(), edges: null, visible: true, tris });
     triCount += tris;
   });
@@ -113,20 +116,42 @@ function build(res) {
   const box = new THREE.Box3().setFromObject(g);
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
+  modelOffset.copy(center);
   g.position.sub(center);
   modelRoot.add(g);
   dims = [size.x, size.y, size.z]; half = [size.x / 2, size.y / 2, size.z / 2];
   radius = Math.max(size.length() / 2, 1e-3); triCount = Math.round(triCount);
+  treeData = buildTree(res, name);
   makeGrid(radius * 3); makeSectionVisuals(); rebuildSection();
   if (edgesOn) applyEdges();
   fit(new THREE.Vector3(1, -1, 0.8));
+  renderTree(); renderPointPanel();
 }
 
 function clearModel() {
-  selected = -1; clearMeasures(true);
+  selected = -1; treeSel.clear(); collapsed.clear(); treeData = null;
+  clearMeasures(true); clearPoints(true);
   modelRoot.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material && o.material !== edgeMat) o.material.dispose(); });
-  modelRoot.clear(); parts = []; triCount = 0;
+  modelRoot.clear(); parts = []; origToPart = []; triCount = 0;
 }
+
+function buildTree(res, name) {
+  const conv = (node) => {
+    let idx = [];
+    const ms = node && node.meshes;
+    if (Array.isArray(ms)) for (const m of ms) {
+      const oi = typeof m === 'number' ? m : (m && typeof m.index === 'number' ? m.index : -1);
+      const pi = origToPart[oi]; if (pi !== undefined && pi >= 0) idx.push(pi);
+    }
+    const children = Array.isArray(node && node.children) ? node.children.map(conv) : [];
+    return { name: (node && node.name && String(node.name).trim()) || 'Узел', parts: idx, children };
+  };
+  let root = (res && res.root) ? conv(res.root) : { name: name || 'Сборка', parts: [], children: [] };
+  if (!root.children.length) root.children = parts.map((p, i) => ({ name: p.name, parts: [i], children: [] }));
+  if (!root.parts.length) root.parts = parts.map((_, i) => i);
+  return root;
+}
+function nodeParts(node) { const s = new Set(node.parts || []); (node.children || []).forEach(c => nodeParts(c).forEach(i => s.add(i))); return [...s]; }
 
 function ensureEdges(p) {
   if (p.edges) return;
@@ -177,12 +202,50 @@ function surfaceHit(cx, cy) {
   const hits = raycaster.intersectObjects(parts.filter(p => p.visible).map(p => p.mesh), false);
   return hits.length ? hits[0] : null;
 }
-function clearSelection() { if (selected >= 0 && parts[selected]) parts[selected].mesh.material.emissive.setHex(0x000000); selected = -1; post({ type: 'deselect' }); }
+function screenPos(v, rect) { const p = v.clone().project(camera); return { x: (p.x * 0.5 + 0.5) * rect.width, y: (-p.y * 0.5 + 0.5) * rect.height }; }
+function closestOnSeg(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+  let t = l2 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return { t, x: ax + t * dx, y: ay + t * dy };
+}
+function snapHit(cx, cy) {
+  const hit = surfaceHit(cx, cy); if (!hit) return null;
+  const mesh = hit.object, rect = canvas.getBoundingClientRect();
+  const px = cx - rect.left, py = cy - rect.top;
+  if (!snapOn || !hit.face) return { point: hit.point.clone(), kind: 'surface', mesh };
+  const pos = mesh.geometry.attributes.position, f = hit.face, mw = mesh.matrixWorld;
+  const verts = [f.a, f.b, f.c].map(i => new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(mw));
+  const scr = verts.map(v => screenPos(v, rect));
+  const TH = 22; let best = null;
+  for (let i = 0; i < 3; i++) { const d = Math.hypot(px - scr[i].x, py - scr[i].y); if (d < TH && (!best || d < best.d)) best = { d, kind: 'vertex', point: verts[i].clone() }; }
+  if (best) return { point: best.point, kind: 'vertex', mesh };
+  for (const pair of [[0, 1], [1, 2], [2, 0]]) {
+    const i = pair[0], j = pair[1];
+    const c = closestOnSeg(px, py, scr[i].x, scr[i].y, scr[j].x, scr[j].y);
+    const d = Math.hypot(px - c.x, py - c.y);
+    if (d < TH && (!best || d < best.d)) best = { d, kind: 'edge', point: verts[i].clone().lerp(verts[j], c.t) };
+  }
+  if (best) return { point: best.point, kind: 'edge', mesh };
+  return { point: hit.point.clone(), kind: 'surface', mesh };
+}
+
+function setHighlight(indices) {
+  parts.forEach(p => p.mesh.material.emissive.setHex(0x000000));
+  indices.forEach(i => { if (parts[i]) parts[i].mesh.material.emissive.setHex(0x1a3f7a); });
+}
+function clearSelection() { selected = -1; treeSel.clear(); setHighlight([]); post({ type: 'deselect' }); renderTree(); }
 function selectPart(i) {
   if (i < 0 || i >= parts.length) return;
-  if (selected >= 0 && parts[selected]) parts[selected].mesh.material.emissive.setHex(0x000000);
-  selected = i; parts[i].mesh.material.emissive.setHex(0x1a3f7a);
+  selected = i; treeSel.clear(); setHighlight([i]);
   post({ type: 'select', index: i, name: parts[i].name, color: '#' + parts[i].mesh.material.color.getHexString() });
+  renderTree();
+}
+function selectNode(node) {
+  const idx = nodeParts(node); if (!idx.length) return;
+  treeSel = new Set(idx); selected = -1; setHighlight(idx);
+  post({ type: 'treeSelect', name: node.name, count: idx.length });
+  renderTree();
 }
 
 function makeMarker(pt, color) {
@@ -201,20 +264,21 @@ function makeLabel(text, pt) {
   sp.position.copy(pt); sp.scale.set(radius * 0.34, radius * 0.117, 1); sp.renderOrder = 1000; return sp;
 }
 function fmtDist(d) { return d >= 1000 ? (d / 1000).toFixed(3) + ' м' : d.toFixed(2) + ' мм'; }
-function createMeasure(a, b, id) {
-  const d = a.distanceTo(b);
-  const grp = new THREE.Group();
+function createMeasure(a, b, id, ka, kb) {
+  const d = a.distanceTo(b), grp = new THREE.Group();
   const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), new THREE.LineBasicMaterial({ color: 0xfbbf24, depthTest: false }));
   line.renderOrder = 998;
-  grp.add(line, makeMarker(a, 0xfbbf24), makeMarker(b, 0xfbbf24), makeLabel(fmtDist(d), a.clone().add(b).multiplyScalar(0.5)));
+  grp.add(line, makeMarker(a, kindColor(ka || 'surface')), makeMarker(b, kindColor(kb || 'surface')), makeLabel(fmtDist(d), a.clone().add(b).multiplyScalar(0.5)));
   measureRoot.add(grp);
-  measures.push({ id, a: a.clone(), b: b.clone(), d, grp });
+  measures.push({ id, a: a.clone(), b: b.clone(), d, ka: ka || 'surface', kb: kb || 'surface', grp });
 }
-function addMeasurePoint(pt) {
-  if (!pendingPoint) { pendingPoint = pt.clone(); pendingMarker = makeMarker(pt, 0xfbbf24); measureRoot.add(pendingMarker); post({ type: 'measureHint', text: 'Тапните вторую точку' }); return; }
-  createMeasure(pendingPoint, pt.clone(), measId++);
-  if (pendingMarker) { measureRoot.remove(pendingMarker); pendingMarker.geometry.dispose(); pendingMarker.material.dispose(); }
-  pendingPoint = null; pendingMarker = null;
+function addMeasurePoint(pt, kind) {
+  if (!pendingPoint) {
+    pendingPoint = pt.clone(); pendingKind = kind; pendingMarker = makeMarker(pt, kindColor(kind)); measureRoot.add(pendingMarker);
+    post({ type: 'measureHint', text: 'Тапните вторую точку (' + kindRu(kind) + ')' }); return;
+  }
+  createMeasure(pendingPoint, pt.clone(), measId++, pendingKind, kind);
+  disposePending();
   post({ type: 'measureHint', text: 'Тапните первую точку следующего измерения' });
   postMeasures(); postState();
 }
@@ -225,11 +289,40 @@ function deleteMeasure(id) {
 }
 function clearMeasures(silent) {
   measures.forEach(m => { measureRoot.remove(m.grp); m.grp.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } }); });
-  measures = []; if (pendingMarker) { measureRoot.remove(pendingMarker); pendingMarker.geometry.dispose(); pendingMarker.material.dispose(); }
-  pendingPoint = null; pendingMarker = null;
+  measures = []; disposePending();
   if (!silent) { postMeasures(); postState(); }
 }
+function disposePending() { if (pendingMarker) { measureRoot.remove(pendingMarker); pendingMarker.geometry.dispose(); pendingMarker.material.dispose(); } pendingPoint = null; pendingMarker = null; }
 function postMeasures() { post({ type: 'measures', list: measures.map(m => ({ id: m.id, d: m.d })) }); }
+
+function createPoint(pt, kind, id) {
+  const grp = new THREE.Group();
+  grp.add(makeMarker(pt, kindColor(kind)));
+  const o = pt.clone().add(modelOffset);
+  grp.add(makeLabel(o.x.toFixed(1) + ', ' + o.y.toFixed(1) + ', ' + o.z.toFixed(1), pt.clone().add(new THREE.Vector3(0, 0, radius * 0.05))));
+  pointRoot.add(grp);
+  points.push({ id, p: pt.clone(), kind, grp });
+  pointId = Math.max(pointId, id + 1);
+}
+function addPoint(sn) {
+  createPoint(sn.point, sn.kind, pointId++);
+  lastPoint = { p: sn.point.clone(), orig: sn.point.clone().add(modelOffset), kind: sn.kind };
+  post({ type: 'point', x: lastPoint.orig.x, y: lastPoint.orig.y, z: lastPoint.orig.z, kind: sn.kind });
+  renderPointPanel(); postPoints(); postState();
+}
+function deletePoint(id) {
+  const p = points.find(x => x.id === id); if (!p) return;
+  pointRoot.remove(p.grp); p.grp.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } });
+  points = points.filter(x => x.id !== id);
+  lastPoint = points.length ? { p: points[points.length - 1].p, orig: points[points.length - 1].p.clone().add(modelOffset), kind: points[points.length - 1].kind } : null;
+  renderPointPanel(); postPoints(); postState();
+}
+function clearPoints(silent) {
+  points.forEach(p => { pointRoot.remove(p.grp); p.grp.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } }); });
+  points = []; lastPoint = null;
+  if (!silent) { renderPointPanel(); postPoints(); postState(); }
+}
+function postPoints() { post({ type: 'points', list: points.map(p => { const o = p.p.clone().add(modelOffset); return { id: p.id, x: o.x, y: o.y, z: o.z, kind: p.kind }; }) }); }
 
 function makeSectionVisuals() {
   sectionRoot.clear();
@@ -271,7 +364,8 @@ canvas.addEventListener('pointerup', e => {
   if (active.size === 0) { tapOk = false; multi = false; }
   if (!wasTap) return;
   const now = Date.now(), x = e.clientX, y = e.clientY;
-  if (mode === 'measure') { const h = surfaceHit(x, y); if (h) addMeasurePoint(h.point); return; }
+  if (mode === 'measure') { const sn = snapHit(x, y); if (sn) addMeasurePoint(sn.point, sn.kind); return; }
+  if (mode === 'point') { const sn = snapHit(x, y); if (sn) addPoint(sn); return; }
   if (now - lastTap < 320) { clearTimeout(pickTimer); lastTap = 0; fit(); }
   else { lastTap = now; clearTimeout(pickTimer); pickTimer = setTimeout(() => { const h = surfaceHit(x, y); if (!h) { clearSelection(); return; } selectPart(parts.findIndex(p => p.mesh === h.object)); }, 240); }
 });
@@ -281,7 +375,12 @@ let stateTimer = 0;
 function gatherState() {
   const colors = {}, hidden = [];
   parts.forEach((p, i) => { const hex = '#' + p.mesh.material.color.getHexString(); if (hex !== p.baseColor) colors[i] = hex; if (!p.visible) hidden.push(i); });
-  return { v: 1, colors, hidden, section: sectionState, measures: measures.map(m => ({ id: m.id, a: m.a.toArray(), b: m.b.toArray(), d: m.d })), cam: { pos: camera.position.toArray(), target: controls.target.toArray(), ortho: orthoOn, zoom: ortho.zoom, halfH } };
+  return {
+    v: 2, colors, hidden, snap: snapOn, section: sectionState,
+    measures: measures.map(m => ({ id: m.id, a: m.a.toArray(), b: m.b.toArray(), d: m.d, ka: m.ka, kb: m.kb })),
+    points: points.map(p => ({ id: p.id, p: p.p.toArray(), kind: p.kind })),
+    cam: { pos: camera.position.toArray(), target: controls.target.toArray(), ortho: orthoOn, zoom: ortho.zoom, halfH }
+  };
 }
 function postState() { clearTimeout(stateTimer); stateTimer = setTimeout(() => post({ type: 'state', state: gatherState() }), 350); }
 controls.addEventListener('change', postState);
@@ -291,9 +390,11 @@ function applyState(s) {
     if (s.colors) Object.keys(s.colors).forEach(k => { const i = +k; if (parts[i]) parts[i].mesh.material.color.set(s.colors[k]); });
     const hid = new Set(s.hidden || []);
     parts.forEach((p, i) => { p.visible = !hid.has(i); p.mesh.visible = p.visible; });
+    if (typeof s.snap === 'boolean') snapOn = s.snap;
     if (s.section) { sectionState = Object.assign(sectionState, s.section); rebuildSection(); }
-    clearMeasures(true);
-    if (s.measures) s.measures.forEach(m => { createMeasure(new THREE.Vector3().fromArray(m.a), new THREE.Vector3().fromArray(m.b), m.id || measId++); measId = Math.max(measId, (m.id || 0) + 1); });
+    clearMeasures(true); clearPoints(true);
+    if (s.measures) s.measures.forEach(m => { createMeasure(new THREE.Vector3().fromArray(m.a), new THREE.Vector3().fromArray(m.b), m.id || measId++, m.ka, m.kb); measId = Math.max(measId, (m.id || 0) + 1); });
+    if (s.points) s.points.forEach(p => { createPoint(new THREE.Vector3().fromArray(p.p), p.kind || 'surface', p.id || pointId++); });
     if (s.cam) {
       orthoOn = !!s.cam.ortho; camera = orthoOn ? ortho : persp; controls.object = camera;
       camera.position.fromArray(s.cam.pos); controls.target.fromArray(s.cam.target);
@@ -301,163 +402,306 @@ function applyState(s) {
       resize(); controls.update();
     }
     if (selected >= 0 && parts[selected] && !parts[selected].visible) clearSelection();
-    postMeasures(); postState();
+    postMeasures(); postPoints(); postVisibility(); renderTree(); renderPointPanel(); postState();
   } catch (e) { post({ type: 'toast', text: 'Не удалось применить сохранённое состояние' }); }
 }
 function resetEdits() {
   parts.forEach(p => { p.mesh.material.color.set(p.baseColor); p.visible = true; p.mesh.visible = true; });
-  clearSelection(); clearMeasures(true);
+  clearSelection(); clearMeasures(true); clearPoints(true);
   sectionState = { show: true, axis: 'x', x: { on: false, off: 0, flip: false }, y: { on: false, off: 0, flip: false }, z: { on: false, off: 0, flip: false } };
-  rebuildSection(); postMeasures(); postState();
+  rebuildSection(); postMeasures(); postPoints(); postVisibility(); renderTree(); renderPointPanel(); postState();
 }
 
-function sendBytes(bytes, kind) {
-  const CH = 96 * 1024, n = Math.ceil(bytes.length / CH);
-  for (let s = 0; s < n; s++) {
+function sendText(kind, filename, lines) {
+  const CH = 1500, total = Math.ceil(lines.length / CH);
+  for (let s = 0; s < total; s++) {
+    const text = lines.slice(s * CH, (s + 1) * CH).join('\n') + '\n';
+    post({ type: 'fileChunk', kind, seq: s, total, data: btoa(text) });
+  }
+  post({ type: 'fileDone', kind, name: filename });
+}
+function sendBinary(kind, filename, bytes) {
+  const CH = 96 * 1024, total = Math.ceil(bytes.length / CH);
+  for (let s = 0; s < total; s++) {
     const slice = bytes.subarray(s * CH, (s + 1) * CH);
     let bin = ''; for (let i = 0; i < slice.length; i++) bin += String.fromCharCode(slice[i]);
-    post({ type: kind + 'Chunk', seq: s, total: n, data: btoa(bin) });
+    post({ type: 'fileChunk', kind, seq: s, total, data: btoa(bin) });
   }
+  post({ type: 'fileDone', kind, name: filename });
 }
 
 function exportSTL() {
-  const meshes = parts.filter(p => p.visible).map(p => p.mesh);
-  let total = 0; meshes.forEach(m => { const g = m.geometry; total += (g.index ? g.index.count : g.attributes.position.count) / 3; });
+  const vis = parts.filter(p => p.visible);
+  let total = 0; vis.forEach(p => { const g = p.mesh.geometry; total += (g.index ? g.index.count : g.attributes.position.count) / 3; });
   if (!total) { post({ type: 'toast', text: 'Нет видимых деталей для экспорта' }); return; }
-  if (total > 600000) { post({ type: 'toast', text: 'Экспорт ограничен: >600k треугольников. Скройте лишние детали.' }); return; }
+  if (total > 600000) { post({ type: 'toast', text: 'STL ограничен: >600k треугольников. Скройте лишние детали.' }); return; }
+  post({ type: 'status', text: 'Подготовка STL…' });
   const buf = new ArrayBuffer(84 + total * 50), dv = new DataView(buf);
   dv.setUint32(80, total, true);
   let off = 84;
   const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vC = new THREE.Vector3(), cb = new THREE.Vector3(), ab = new THREE.Vector3();
-  meshes.forEach(m => {
-    m.updateWorldMatrix(true, false);
+  vis.forEach(p => {
+    const m = p.mesh; m.updateWorldMatrix(true, false);
     const pos = m.geometry.attributes.position, idx = m.geometry.index, mw = m.matrixWorld;
     const count = idx ? idx.count : pos.count;
     for (let i = 0; i < count; i += 3) {
       const a = idx ? idx.getX(i) : i, b = idx ? idx.getX(i + 1) : i + 1, c = idx ? idx.getX(i + 2) : i + 2;
-      vA.fromBufferAttribute(pos, a).applyMatrix4(mw); vB.fromBufferAttribute(pos, b).applyMatrix4(mw); vC.fromBufferAttribute(pos, c).applyMatrix4(mw);
+      vA.fromBufferAttribute(pos, a).applyMatrix4(mw).add(modelOffset);
+      vB.fromBufferAttribute(pos, b).applyMatrix4(mw).add(modelOffset);
+      vC.fromBufferAttribute(pos, c).applyMatrix4(mw).add(modelOffset);
       cb.subVectors(vC, vB); ab.subVectors(vA, vB); cb.cross(ab).normalize();
       dv.setFloat32(off, cb.x, true); dv.setFloat32(off + 4, cb.y, true); dv.setFloat32(off + 8, cb.z, true); off += 12;
       for (const v of [vA, vB, vC]) { dv.setFloat32(off, v.x, true); dv.setFloat32(off + 4, v.y, true); dv.setFloat32(off + 8, v.z, true); off += 12; }
       dv.setUint16(off, 0, true); off += 2;
     }
   });
-  sendBytes(new Uint8Array(buf), 'stl');
-  post({ type: 'stlDone', tris: total });
+  sendBinary('stl', modelName.replace(/\.[^.]+$/, '') + '.stl', new Uint8Array(buf));
 }
 
-// ---------- запись цветов в исходный STEP ----------
-function splitStepParams(s) {
-  const out = []; let depth = 0, inStr = false, cur = '';
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i];
-    if (inStr) { cur += ch; if (ch === "'") { if (s[i + 1] === "'") { cur += s[i + 1]; i++; } else inStr = false; } continue; }
-    if (ch === "'") { inStr = true; cur += ch; continue; }
-    if (ch === '(') { depth++; cur += ch; continue; }
-    if (ch === ')') { depth--; cur += ch; continue; }
-    if (ch === ',' && depth === 0) { out.push(cur.trim()); cur = ''; continue; }
-    cur += ch;
+const TR = { а:'a',б:'b',в:'v',г:'g',д:'d',е:'e',ё:'e',ж:'zh',з:'z',и:'i',й:'y',к:'k',л:'l',м:'m',н:'n',о:'o',п:'p',р:'r',с:'s',т:'t',у:'u',ф:'f',х:'h',ц:'c',ч:'ch',ш:'sh',щ:'sch',ъ:'',ы:'y',ь:'',э:'e',ю:'yu',я:'ya' };
+function ascii(s) {
+  let r = '';
+  for (const ch of String(s)) {
+    const low = ch.toLowerCase();
+    if (TR[low] !== undefined) { const t = TR[low]; r += (ch === low) ? t : (t ? t[0].toUpperCase() + t.slice(1) : ''); }
+    else if (ch.charCodeAt(0) < 128) r += ch;
+    else r += '_';
   }
-  if (cur.trim()) out.push(cur.trim());
-  return out;
+  return r;
 }
-function stepRef(p) { const m = /^#(\d+)$/.exec((p || '').trim()); return m ? +m[1] : null; }
-function stepStr(p) { return (p || '').trim().replace(/^'|'$/g, '').replace(/''/g, "'"); }
-function parseStepEntities(text) {
-  const entities = new Map(); let i = 0, maxId = 0;
-  while (i < text.length) {
-    const h = text.indexOf('#', i); if (h < 0) break;
-    let j = h + 1, idStr = '';
-    while (j < text.length && text[j] >= '0' && text[j] <= '9') { idStr += text[j]; j++; }
-    if (!idStr) { i = h + 1; continue; }
-    while (j < text.length && /\s/.test(text[j])) j++;
-    if (text[j] !== '=') { i = j; continue; }
-    j++;
-    const start = j; let inStr = false, k = j;
-    while (k < text.length) {
-      const ch = text[k];
-      if (inStr) { if (ch === "'") { if (text[k + 1] === "'") { k += 2; continue; } inStr = false; } k++; continue; }
-      if (ch === "'") { inStr = true; k++; continue; }
-      if (ch === ';') break;
-      k++;
+
+function exportSTEP() {
+  const vis = parts.filter(p => p.visible);
+  if (!vis.length) { post({ type: 'toast', text: 'Нет видимых деталей для экспорта' }); return; }
+  let total = 0; vis.forEach(p => { const g = p.mesh.geometry; total += (g.index ? g.index.count : g.attributes.position.count) / 3; });
+  if (total > 20000) {
+    post({ type: 'toast', text: 'STEP: нужно не больше 20000 треугольников, сейчас ' + Math.round(total) + '. Поставьте качество «Быстро» или скройте детали.' });
+    return;
+  }
+  post({ type: 'status', text: 'Подготовка STEP…' });
+
+  const body = [];
+  let nid = 0;
+  const A = s => { nid++; body.push('#' + nid + '=' + s + ';'); return nid; };
+  const R = i => '#' + i;
+  const N = v => (Math.abs(v) < 1e-9 ? 0 : v).toFixed(6);
+  const PV = v => '(' + N(v.x) + ',' + N(v.y) + ',' + N(v.z) + ')';
+  const Q = s => "'" + ascii(s).replace(/'/g, "''") + "'";
+
+  const appCtx = A("APPLICATION_CONTEXT('automotive design')");
+  A("APPLICATION_PROTOCOL_DEFINITION('international standard','automotive_design',2000," + R(appCtx) + ")");
+  const pdCtx = A("PRODUCT_DEFINITION_CONTEXT('part definition'," + R(appCtx) + ",'design')");
+  const pCtx = A("PRODUCT_CONTEXT(''," + R(appCtx) + ",'mechanical')");
+  const prodName = ascii(modelName.replace(/\.[^.]+$/, '')) || 'Model';
+  const prod = A("PRODUCT(" + Q(prodName) + "," + Q(prodName) + "('',(" + R(pCtx) + "))").replace("(''", "''"));
+  const pdf = A("PRODUCT_DEFINITION_FORMATION('',''," + R(prod) + ")");
+  const pd = A("PRODUCT_DEFINITION('design',''," + R(pdf) + "," + R(pdCtx) + ")");
+  const pds = A("PRODUCT_DEFINITION_SHAPE('',''," + R(pd) + ")");
+
+  const lenU = A("(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.))");
+  const angU = A("(NAMED_UNIT(*)PLANE_ANGLE_UNIT()SI_UNIT($,.RADIAN.))");
+  const solU = A("(NAMED_UNIT(*)SI_UNIT($,.STERADIAN.)SOLID_ANGLE_UNIT())");
+  const unc = A("UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(1.E-06)," + R(lenU) + ",'distance_accuracy_value','confusion accuracy')");
+  const ctx = A("(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((" + R(unc) + "))GLOBAL_UNIT_ASSIGNED_CONTEXT((" + R(lenU) + "," + R(angU) + "," + R(solU) + "))REPRESENTATION_CONTEXT('Context3D','3D Context with UNIT and UNCERTAINTY'))");
+
+  const origin = A("CARTESIAN_POINT('',(0.,0.,0.))");
+  const zDir = A("DIRECTION('',(0.,0.,1.))");
+  const xDir = A("DIRECTION('',(1.,0.,0.))");
+  const axis0 = A("AXIS2_PLACEMENT_3D(''," + R(origin) + "," + R(zDir) + "," + R(xDir) + ")");
+
+  const items = [axis0], styled = [];
+  const tmp = new THREE.Vector3(), va = new THREE.Vector3(), vb = new THREE.Vector3(), vc = new THREE.Vector3();
+  const nrm = new THREE.Vector3(), e1 = new THREE.Vector3(), e2 = new THREE.Vector3();
+  let made = 0;
+
+  vis.forEach(p => {
+    const mesh = p.mesh; mesh.updateWorldMatrix(true, false);
+    const geo = mesh.geometry, pos = geo.attributes.position, idx = geo.index, mw = mesh.matrixWorld;
+    const count = idx ? idx.count : pos.count;
+    const vmap = new Map(), pts = [], cps = [], vps = [];
+    const vid = (i) => {
+      tmp.fromBufferAttribute(pos, i).applyMatrix4(mw).add(modelOffset);
+      const k = tmp.x.toFixed(5) + '|' + tmp.y.toFixed(5) + '|' + tmp.z.toFixed(5);
+      let j = vmap.get(k);
+      if (j === undefined) {
+        const cp = A("CARTESIAN_POINT(''," + PV(tmp) + ")");
+        const vp = A("VERTEX_POINT(''," + R(cp) + ")");
+        j = pts.length; pts.push(tmp.clone()); cps.push(cp); vps.push(vp); vmap.set(k, j);
+      }
+      return j;
+    };
+    const emap = new Map();
+    const getEdge = (a, b) => {
+      const k = Math.min(a, b) + '_' + Math.max(a, b);
+      let e = emap.get(k);
+      if (!e) {
+        const d = new THREE.Vector3().subVectors(pts[b], pts[a]);
+        const len = d.length(); if (len < 1e-9) return null;
+        d.divideScalar(len);
+        const dir = A("DIRECTION(''," + PV(d) + ")");
+        const vec = A("VECTOR(''," + R(dir) + ",1.0)");
+        const ln = A("LINE(''," + R(cps[a]) + "," + R(vec) + ")");
+        const ec = A("EDGE_CURVE(''," + R(vps[a]) + "," + R(vps[b]) + "," + R(ln) + ",.T.)");
+        e = { id: ec, a, b }; emap.set(k, e);
+      }
+      return e;
+    };
+    const faces = [];
+    for (let i = 0; i < count; i += 3) {
+      const i0 = idx ? idx.getX(i) : i, i1 = idx ? idx.getX(i + 1) : i + 1, i2 = idx ? idx.getX(i + 2) : i + 2;
+      const a = vid(i0), b = vid(i1), c = vid(i2);
+      if (a === b || b === c || a === c) continue;
+      va.copy(pts[a]); vb.copy(pts[b]); vc.copy(pts[c]);
+      e1.subVectors(vb, va); e2.subVectors(vc, va); nrm.crossVectors(e1, e2);
+      if (nrm.lengthSq() < 1e-18) continue;
+      nrm.normalize();
+      const rd = e1.clone().normalize();
+      const nId = A("DIRECTION(''," + PV(nrm) + ")");
+      const rId = A("DIRECTION(''," + PV(rd) + ")");
+      const ap = A("AXIS2_PLACEMENT_3D(''," + R(cps[a]) + "," + R(nId) + "," + R(rId) + ")");
+      const pl = A("PLANE(''," + R(ap) + ")");
+      const oe = []; let ok = true;
+      for (const pair of [[a, b], [b, c], [c, a]]) {
+        const e = getEdge(pair[0], pair[1]);
+        if (!e) { ok = false; break; }
+        oe.push(A("ORIENTED_EDGE('',*,*," + R(e.id) + "," + (e.a === pair[0] ? '.T.' : '.F.') + ")"));
+      }
+      if (!ok) continue;
+      const loop = A("EDGE_LOOP('',(" + oe.map(R).join(',') + "))");
+      const bound = A("FACE_OUTER_BOUND(''," + R(loop) + ",.T.)");
+      faces.push(A("ADVANCED_FACE('',(" + R(bound) + ")," + R(pl) + ",.T.)"));
     }
-    if (k >= text.length) break;
-    const body = text.slice(start, k).trim();
-    const m = /^([A-Za-z0-9_]+)\s*\(/.exec(body);
-    if (m) {
-      const id = +idStr;
-      const params = body.slice(m[0].length, body.lastIndexOf(')'));
-      entities.set(id, { id, type: m[1].toUpperCase(), params, raw: text.slice(h, k + 1) });
-      if (id > maxId) maxId = id;
-    }
-    i = k + 1;
-  }
-  return { entities, maxId };
+    if (!faces.length) return;
+    const shell = A("CLOSED_SHELL('',(" + faces.map(R).join(',') + "))");
+    const solid = A("FACETED_BREP(" + Q(p.name) + "," + R(shell) + ")");
+    items.push(solid); made += faces.length;
+    const srgb = p.mesh.material.color.clone().convertLinearToSRGB();
+    const col = A("COLOUR_RGB(''," + N(srgb.r) + "," + N(srgb.g) + "," + N(srgb.b) + ")");
+    const fc = A("FILL_AREA_STYLE_COLOUR(''," + R(col) + ")");
+    const fas = A("FILL_AREA_STYLE('',(" + R(fc) + "))");
+    const ssf = A("SURFACE_STYLE_FILL_AREA(" + R(fas) + ")");
+    const sss = A("SURFACE_SIDE_STYLE('',(" + R(ssf) + "))");
+    const ssu = A("SURFACE_STYLE_USAGE(.BOTH.," + R(sss) + ")");
+    const psa = A("PRESENTATION_STYLE_ASSIGNMENT((" + R(ssu) + "))");
+    styled.push(A("STYLED_ITEM('',(" + R(psa) + ")," + R(solid) + ")"));
+  });
+
+  if (!made) { post({ type: 'toast', text: 'Не удалось построить грани для STEP' }); return; }
+
+  const rep = A("ADVANCED_BREP_SHAPE_REPRESENTATION('',(" + items.map(R).join(',') + ")," + R(ctx) + ")");
+  A("SHAPE_DEFINITION_REPRESENTATION(" + R(pds) + "," + R(rep) + ")");
+  if (styled.length) A("MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION('',(" + styled.map(R).join(',') + ")," + R(ctx) + ")");
+
+  const stamp = new Date().toISOString().slice(0, 19);
+  const fname = ascii(modelName.replace(/\.[^.]+$/, '')) + '.step';
+  const head = [
+    'ISO-10303-21;',
+    'HEADER;',
+    "FILE_DESCRIPTION(('STEP Viewer faceted export'),'2;1');",
+    "FILE_NAME(" + Q(fname) + ",'" + stamp + "',('STEP Viewer'),(''),'STEP Viewer','STEP Viewer','');",
+    "FILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }'));",
+    'ENDSEC;',
+    'DATA;'
+  ];
+  const tail = ['ENDSEC;', 'END-ISO-10303-21;'];
+  sendText('step', fname, head.concat(body, tail));
+  post({ type: 'toast', text: 'STEP готов: ' + made + ' граней' });
 }
-function buildEditedStep(text) {
-  const parsed = parseStepEntities(text);
-  const entities = parsed.entities;
-  const products = new Map(), pdf = new Map(), pd = new Map(), pds = new Map(), sdr = [];
-  for (const e of entities.values()) {
-    const ps = splitStepParams(e.params);
-    if (e.type === 'PRODUCT') products.set(e.id, stepStr(ps[1]));
-    else if (e.type === 'PRODUCT_DEFINITION_FORMATION') pdf.set(e.id, stepRef(ps[2]));
-    else if (e.type === 'PRODUCT_DEFINITION') pd.set(e.id, stepRef(ps[2]));
-    else if (e.type === 'PRODUCT_DEFINITION_SHAPE') pds.set(e.id, stepRef(ps[2]));
-    else if (e.type === 'SHAPE_DEFINITION_REPRESENTATION') sdr.push({ def: stepRef(ps[0]), rep: stepRef(ps[1]) });
-  }
-  const nameToRep = new Map();
-  for (const r of sdr) {
-    const pdId = pds.get(r.def); if (pdId == null) continue;
-    const formId = pd.get(pdId); if (formId == null) continue;
-    const prodId = pdf.get(formId); if (prodId == null) continue;
-    const name = products.get(prodId); if (name == null) continue;
-    if (!nameToRep.has(name)) nameToRep.set(name, r.rep);
-  }
-  const targets = new Map();
-  for (const p of parts) {
-    if (!p.visible) continue;
-    const hex = '#' + p.mesh.material.color.getHexString();
-    const rep = nameToRep.get(p.name);
-    if (rep == null) continue;
-    if (!targets.has(rep)) targets.set(rep, hex);
-  }
-  if (!targets.size) return null;
-  let out = text;
-  for (const e of entities.values()) {
-    if (e.type !== 'STYLED_ITEM') continue;
-    const ps = splitStepParams(e.params);
-    const target = stepRef(ps[ps.length - 1]);
-    if (target != null && targets.has(target)) out = out.replace(e.raw, '');
-  }
-  let id = parsed.maxId;
-  const add = [];
-  for (const [rep, hex] of targets) {
-    const r = parseInt(hex.slice(1, 3), 16) / 255, g = parseInt(hex.slice(3, 5), 16) / 255, b = parseInt(hex.slice(5, 7), 16) / 255;
-    const c = ++id, fac = ++id, fa = ++id, ssfa = ++id, sss = ++id, ssu = ++id, psa = ++id, si = ++id;
-    add.push('#' + c + " = COLOUR_RGB(''," + r.toFixed(6) + ',' + g.toFixed(6) + ',' + b.toFixed(6) + ');');
-    add.push('#' + fac + " = FILL_AREA_STYLE_COLOUR('',#" + c + ');');
-    add.push('#' + fa + " = FILL_AREA_STYLE('',(#" + fac + '));');
-    add.push('#' + ssfa + ' = SURFACE_STYLE_FILL_AREA(#' + fa + ');');
-    add.push('#' + sss + " = SURFACE_SIDE_STYLE('',(#" + ssfa + '));');
-    add.push('#' + ssu + ' = SURFACE_STYLE_USAGE(.BOTH.,#' + sss + ');');
-    add.push('#' + psa + ' = PRESENTATION_STYLE_ASSIGNMENT((#' + ssu + '));');
-    add.push('#' + si + " = STYLED_ITEM('',(#" + psa + '),#' + rep + ');');
-  }
-  const endIdx = out.indexOf('END-ISO-10303-21');
-  const secIdx = out.lastIndexOf('ENDSEC;', endIdx < 0 ? out.length : endIdx);
-  if (secIdx < 0) return null;
-  out = out.slice(0, secIdx) + '\n' + add.join('\n') + '\n' + out.slice(secIdx);
-  return { text: out, matched: targets.size };
+
+function renderTree() {
+  const body = document.getElementById('treeBody'); if (!body) return;
+  body.innerHTML = '';
+  if (!treeData) { body.appendChild(el('div', 'phint', 'Откройте модель, чтобы увидеть дерево сборки')); return; }
+  const q = (document.getElementById('treeSearch').value || '').toLowerCase().trim();
+  const matches = n => n.name.toLowerCase().includes(q);
+  const hasMatch = n => matches(n) || (n.children || []).some(hasMatch);
+  const walk = (node, depth) => {
+    if (q && !hasMatch(node)) return;
+    const idx = nodeParts(node);
+    const row = el('div', 'trow'); row.style.paddingLeft = (6 + depth * 14) + 'px';
+    const kids = node.children || [];
+    const arrow = el('span', 'tarrow', kids.length ? (collapsed.has(node) ? '▸' : '▾') : '');
+    if (kids.length) arrow.addEventListener('click', ev => { ev.stopPropagation(); if (collapsed.has(node)) collapsed.delete(node); else collapsed.add(node); renderTree(); });
+    row.appendChild(arrow);
+    const allVis = idx.length > 0 && idx.every(i => parts[i] && parts[i].visible);
+    const eye = el('button', 'teye' + (allVis ? '' : ' off'), allVis ? '👁' : '🚫');
+    eye.addEventListener('click', ev => { ev.stopPropagation(); toggleNodeVis(node); });
+    row.appendChild(eye);
+    const name = el('span', 'tname', node.name);
+    name.addEventListener('click', () => selectNode(node));
+    row.appendChild(name);
+    row.appendChild(el('span', 'tcount', String(idx.length)));
+    if (treeSel.size && idx.length && idx.every(i => treeSel.has(i))) row.classList.add('sel');
+    body.appendChild(row);
+    if (!collapsed.has(node) || q) kids.forEach(c => walk(c, depth + 1));
+  };
+  walk(treeData, 0);
 }
-function exportStepEdited() {
-  if (!originalStepText) { post({ type: 'toast', text: 'Запись в STEP доступна только для исходных .step/.stp' }); return; }
-  let result;
-  try { result = buildEditedStep(originalStepText); } catch (e) { result = null; }
-  if (!result) { post({ type: 'toast', text: 'Не удалось сопоставить детали с именем продукта в STEP. Цвета сохранены в проекте JSON.' }); return; }
-  sendBytes(new TextEncoder().encode(result.text), 'step');
-  post({ type: 'stepDone', matched: result.matched });
+function toggleNodeVis(node) {
+  const idx = nodeParts(node); if (!idx.length) return;
+  const allVis = idx.every(i => parts[i].visible);
+  idx.forEach(i => { parts[i].visible = !allVis; parts[i].mesh.visible = parts[i].visible; });
+  if (selected >= 0 && !parts[selected].visible) clearSelection();
+  postVisibility(); postState(); renderTree();
 }
+function isolateTreeSel() {
+  if (!treeSel.size) { post({ type: 'toast', text: 'Сначала выберите узел в дереве' }); return; }
+  parts.forEach((p, i) => { p.visible = treeSel.has(i); p.mesh.visible = p.visible; });
+  postVisibility(); postState(); renderTree();
+}
+function showAllParts() { parts.forEach(p => { p.visible = true; p.mesh.visible = true; }); postVisibility(); postState(); renderTree(); }
+function postVisibility() { post({ type: 'visibility', arr: parts.map(p => p.visible) }); }
+function setTreeOpen(on) { treeOpen = !!on; document.getElementById('treePanel').classList.toggle('hidden', !treeOpen); if (treeOpen) renderTree(); post({ type: 'tree', open: treeOpen }); }
+
+function renderPointPanel() {
+  const panel = document.getElementById('pointPanel');
+  const body = document.getElementById('pointBody');
+  if (mode !== 'point') { panel.classList.add('hidden'); return; }
+  panel.classList.remove('hidden');
+  body.innerHTML = '';
+  if (lastPoint) {
+    const o = lastPoint.orig, card = el('div', 'pcard');
+    card.appendChild(el('span', 'badge ' + lastPoint.kind, kindRu(lastPoint.kind)));
+    const grid = el('div', 'pgrid');
+    ['X', 'Y', 'Z'].forEach((ax, i) => {
+      const row = el('div', 'prow'); row.appendChild(el('span', 'pax', ax));
+      const val = el('span', 'pval', o.getComponent(i).toFixed(3)); val.appendChild(el('span', 'punit', 'мм'));
+      row.appendChild(val); grid.appendChild(row);
+    });
+    card.appendChild(grid);
+    const copy = el('button', 'copybtn', 'Копировать XYZ');
+    copy.addEventListener('click', () => post({ type: 'copy', text: o.x.toFixed(3) + ', ' + o.y.toFixed(3) + ', ' + o.z.toFixed(3) }));
+    card.appendChild(copy); body.appendChild(card);
+  } else {
+    body.appendChild(el('div', 'phint', 'Тапните по модели — координаты появятся здесь.\nЗелёный — вершина, голубой — ребро, жёлтый — поверхность.'));
+  }
+  if (points.length) {
+    const list = el('div', 'plist');
+    points.forEach(pt => {
+      const o = pt.p.clone().add(modelOffset);
+      const row = el('div', 'pitem');
+      row.appendChild(el('span', 'pkind ' + pt.kind, kindShort(pt.kind)));
+      row.appendChild(el('span', 'pcoords', o.x.toFixed(2) + ', ' + o.y.toFixed(2) + ', ' + o.z.toFixed(2)));
+      const del = el('button', 'pdel', '✕'); del.addEventListener('click', () => deletePoint(pt.id));
+      row.appendChild(del); list.appendChild(row);
+    });
+    body.appendChild(list);
+    const clear = el('button', 'pbtn', 'Очистить точки'); clear.style.margin = '6px'; clear.style.width = 'calc(100% - 12px)';
+    clear.addEventListener('click', () => clearPoints(false)); body.appendChild(clear);
+  }
+}
+function setModeInternal(m) {
+  mode = (m === 'measure' || m === 'point') ? m : 'select';
+  if (mode !== 'measure') disposePending();
+  if (mode === 'measure') post({ type: 'measureHint', text: 'Тапните первую точку' });
+  renderPointPanel();
+}
+
+document.getElementById('treeClose').addEventListener('click', () => setTreeOpen(false));
+document.getElementById('treeShowAll').addEventListener('click', showAllParts);
+document.getElementById('treeIsolate').addEventListener('click', isolateTreeSel);
+document.getElementById('treeSearch').addEventListener('input', renderTree);
+document.getElementById('pointClose').addEventListener('click', () => { setModeInternal('select'); post({ type: 'mode', mode: 'select' }); });
 
 window.SV = {
   open, clear: clearModel, fit: () => fit(),
@@ -468,14 +712,18 @@ window.SV = {
   setGrid: on => { gridOn = !!on; if (grid) grid.visible = gridOn; axes.visible = gridOn; },
   setDark: on => { darkOn = !!on; scene.background = new THREE.Color(darkOn ? BG_DARK : BG_LIGHT); },
   setQuality: v => { deflection = Number(v) || 0.001; },
-  setPartsVisible: arr => { parts.forEach((p, i) => { p.visible = arr[i] !== false; p.mesh.visible = p.visible; }); if (selected >= 0 && parts[selected] && !parts[selected].visible) clearSelection(); postState(); },
+  setSnap: on => { snapOn = !!on; postState(); },
+  setMode: m => setModeInternal(m),
+  setTreeOpen: on => setTreeOpen(on),
+  setPartsVisible: arr => { parts.forEach((p, i) => { p.visible = arr[i] !== false; p.mesh.visible = p.visible; }); if (selected >= 0 && parts[selected] && !parts[selected].visible) clearSelection(); postVisibility(); postState(); renderTree(); },
   clearSelection,
   setColor: hex => { if (selected < 0 || !parts[selected]) return; parts[selected].mesh.material.color.set(hex); post({ type: 'color', index: selected, color: hex }); postState(); },
-  setMode: m => { mode = m === 'measure' ? 'measure' : 'select'; if (mode !== 'measure' && pendingMarker) { measureRoot.remove(pendingMarker); pendingMarker.geometry.dispose(); pendingMarker.material.dispose(); pendingPoint = null; pendingMarker = null; } post({ type: 'measureHint', text: mode === 'measure' ? 'Тапните первую точку' : '' }); },
   setSection: s => { sectionState = Object.assign(sectionState, s || {}); rebuildSection(); postState(); },
   clearMeasures: () => clearMeasures(false),
   deleteMeasure,
+  clearPoints: () => clearPoints(false),
+  deletePoint,
   requestState: () => post({ type: 'state', state: gatherState() }),
-  applyState, resetEdits, exportSTL, exportStepEdited
+  applyState, resetEdits, exportSTL, exportSTEP
 };
 post({ type: 'ready' });
