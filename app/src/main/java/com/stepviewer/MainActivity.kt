@@ -277,15 +277,12 @@ class MainActivity : AppCompatActivity() {
     private fun pushSettings() = js("SV.setWireframe($wire), SV.setEdges($edges), SV.setOrtho($ortho), SV.setGrid($grid), SV.setDark($dark), SV.setQuality($deflection), SV.setMode(${JSONObject.quote(mode)}), SV.setSection($secState)")
 
     private fun chip(b: Button, on: Boolean, accent: Int = 0xFF1E88E5.toInt()) {
-        val bg = GradientDrawable().apply {
-            cornerRadius = 12f
-            setColor(if (on) accent else 0x00000000)
-            setStroke(2, if (on) 0xFFFFFFFF.toInt() else 0xFF2A3441.toInt())
-        }
-        b.background = bg
-        b.setTextColor(if (on) 0xFFFFFFFF.toInt() else 0xFFB0BEC5.toInt())
-        b.invalidate()
+        b.setBackgroundColor(if (on) accent else 0x00000000)
+        b.setTextColor(if (on) 0xFFFFFFFF.toInt() else 0xFF90A4AE.toInt())
+        b.setTypeface(null, if (on) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
     }
+
+
     private fun updateDeck() {
         chip(bModeSelect, mode == "select"); chip(bModeMeasure, mode == "measure", 0xFFF59E0B.toInt())
         chip(bWire, wire); chip(bEdges, edges); chip(bOrtho, ortho); chip(bGrid, grid)
