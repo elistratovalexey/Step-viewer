@@ -41,15 +41,18 @@ let parts = [], origToPart = [], treeData = null, modelName = 'model.step';
 let radius = 1, triCount = 0, dims = [0, 0, 0], half = [1, 1, 1];
 let modelOffset = new THREE.Vector3();
 let wireOn = false, edgesOn = false, orthoOn = false, gridOn = false, darkOn = true, snapOn = true;
-let deflection = 0.001, mode = 'select', selected = -1, treeOpen = false;
+let deflection = 0.001, usedDeflection = 0.001;
+let mode = 'select', selected = -1, treeOpen = false;
 let measures = [], measId = 1, pendingPoint = null, pendingKind = 'surface', pendingMarker = null;
 let points = [], pointId = 1, lastPoint = null;
 let treeSel = new Set(), collapsed = new Set();
+let limits = { model: 1500000, stl: 600000, step: 20000, edges: 400000 };
 let sectionState = { show: true, axis: 'x', x: { on: false, off: 0, flip: false }, y: { on: false, off: 0, flip: false }, z: { on: false, off: 0, flip: false } };
 const AX = { x: 0, y: 1, z: 2 };
 const kindColor = k => k === 'vertex' ? 0x22c55e : k === 'edge' ? 0x38bdf8 : 0xfbbf24;
 const kindRu = k => k === 'vertex' ? 'Вершина' : k === 'edge' ? 'Ребро' : 'Поверхность';
 const kindShort = k => k === 'vertex' ? 'В' : k === 'edge' ? 'Р' : 'П';
+const nfmt = n => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 
 let occtPromise = null;
 function getOcct() {
@@ -65,6 +68,39 @@ function getOcct() {
 }
 const nextFrame = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
 
+function countTris(res) {
+  let t = 0;
+  res.meshes.forEach(m => {
+    const pos = m.attributes && m.attributes.position && m.attributes.position.array;
+    if (!pos || pos.length < 9) return;
+    const idx = m.index && m.index.array;
+    t += (idx ? idx.length : pos.length / 3) / 3;
+  });
+  return Math.round(t);
+}
+
+async function importWithBudget(occt, data, fn) {
+  const reader = occt[fn];
+  let defl = deflection, res = null, tris = 0;
+  const attempts = 5;
+  for (let a = 0; a < attempts; a++) {
+    const params = { linearUnit: 'millimeter', linearDeflectionType: 'bounding_box_ratio', linearDeflection: defl, angularDeflection: 0.5 };
+    try { res = reader.call(occt, data, params); } catch (e) { res = reader.call(occt, data, null); }
+    if (!res || !res.success || !res.meshes || !res.meshes.length) throw new Error('В файле не найдена геометрия либо формат не поддерживается.');
+    tris = countTris(res);
+    usedDeflection = defl;
+    if (!limits.model || tris <= limits.model) return res;
+    if (a === attempts - 1) {
+      post({ type: 'toast', text: 'Лимит ' + nfmt(limits.model) + ' не достигнут: осталось ' + nfmt(tris) + ' треуг. Модель открыта как есть.' });
+      return res;
+    }
+    post({ type: 'status', text: 'Сетка ' + nfmt(tris) + ' треуг. > лимита ' + nfmt(limits.model) + '. Упрощаю…' });
+    await nextFrame();
+    defl = defl * 2.5;
+  }
+  return res;
+}
+
 async function open(url, name) {
   try {
     modelName = name || 'model.step';
@@ -78,13 +114,9 @@ async function open(url, name) {
     const t0 = performance.now();
     const ext = (name.split('.').pop() || '').toLowerCase();
     const fn = (ext === 'igs' || ext === 'iges') ? 'ReadIgesFile' : (ext === 'brep') ? 'ReadBrepFile' : 'ReadStepFile';
-    const params = { linearUnit: 'millimeter', linearDeflectionType: 'bounding_box_ratio', linearDeflection: deflection, angularDeflection: 0.5 };
-    const reader = occt[fn];
-    let res;
-    try { res = reader.call(occt, data, params); } catch (e) { res = reader.call(occt, data, null); }
-    if (!res || !res.success || !res.meshes || !res.meshes.length) throw new Error('В файле не найдена геометрия либо формат не поддерживается.');
+    const res = await importWithBudget(occt, data, fn);
     build(res, name);
-    post({ type: 'loaded', parts: parts.map(p => p.name), triangles: triCount, bbox: dims, time: performance.now() - t0, tree: !!treeData });
+    post({ type: 'loaded', parts: parts.map(p => p.name), triangles: triCount, bbox: dims, time: performance.now() - t0, deflection: usedDeflection, tree: !!treeData });
     postMeasures(); postPoints(); postVisibility(); postState();
   } catch (err) { post({ type: 'error', text: (err && err.message) ? err.message : String(err) }); }
 }
@@ -155,7 +187,7 @@ function nodeParts(node) { const s = new Set(node.parts || []); (node.children |
 
 function ensureEdges(p) {
   if (p.edges) return;
-  if (p.tris > 400000) { post({ type: 'toast', text: 'Слишком много граней для рёбер: ' + p.name }); return; }
+  if (limits.edges && p.tris > limits.edges) { post({ type: 'toast', text: 'Рёбра пропущены: ' + p.name + ' (' + nfmt(p.tris) + ' треуг. > лимита ' + nfmt(limits.edges) + ')' }); return; }
   p.edges = new THREE.LineSegments(new THREE.EdgesGeometry(p.mesh.geometry, 25), edgeMat);
   p.mesh.add(p.edges);
 }
@@ -434,7 +466,7 @@ function exportSTL() {
   const vis = parts.filter(p => p.visible);
   let total = 0; vis.forEach(p => { const g = p.mesh.geometry; total += (g.index ? g.index.count : g.attributes.position.count) / 3; });
   if (!total) { post({ type: 'toast', text: 'Нет видимых деталей для экспорта' }); return; }
-  if (total > 600000) { post({ type: 'toast', text: 'STL ограничен: >600k треугольников. Скройте лишние детали.' }); return; }
+  if (limits.stl && total > limits.stl) { post({ type: 'toast', text: 'STL: ' + nfmt(total) + ' треуг. превышает лимит ' + nfmt(limits.stl) + '. Скройте детали или поднимите лимит в Настройках.' }); return; }
   post({ type: 'status', text: 'Подготовка STL…' });
   const buf = new ArrayBuffer(84 + total * 50), dv = new DataView(buf);
   dv.setUint32(80, total, true);
@@ -474,10 +506,7 @@ function exportSTEP() {
   const vis = parts.filter(p => p.visible);
   if (!vis.length) { post({ type: 'toast', text: 'Нет видимых деталей для экспорта' }); return; }
   let total = 0; vis.forEach(p => { const g = p.mesh.geometry; total += (g.index ? g.index.count : g.attributes.position.count) / 3; });
-  if (total > 20000) {
-    post({ type: 'toast', text: 'STEP: нужно не больше 20000 треугольников, сейчас ' + Math.round(total) + '. Поставьте качество «Быстро» или скройте детали.' });
-    return;
-  }
+  if (limits.step && total > limits.step) { post({ type: 'toast', text: 'STEP: ' + nfmt(total) + ' треуг. превышает лимит ' + nfmt(limits.step) + '. Поставьте качество «Быстро», скройте детали или поднимите лимит в Настройках.' }); return; }
   post({ type: 'status', text: 'Подготовка STEP…' });
 
   const body = [];
@@ -605,7 +634,7 @@ function exportSTEP() {
   ];
   const tail = ['ENDSEC;', 'END-ISO-10303-21;'];
   sendText('step', fname, head.concat(body, tail));
-  post({ type: 'toast', text: 'STEP готов: ' + made + ' граней' });
+  post({ type: 'toast', text: 'STEP готов: ' + nfmt(made) + ' граней' });
 }
 
 function renderTree() {
@@ -715,6 +744,14 @@ window.SV = {
   setSnap: on => { snapOn = !!on; postState(); },
   setMode: m => setModeInternal(m),
   setTreeOpen: on => setTreeOpen(on),
+  setLimits: o => {
+    if (!o) return;
+    const pick = (v, d) => { const n = Number(v); return isFinite(n) && n >= 0 ? Math.round(n) : d; };
+    limits.model = pick(o.model, limits.model);
+    limits.stl = pick(o.stl, limits.stl);
+    limits.step = pick(o.step, limits.step);
+    limits.edges = pick(o.edges, limits.edges);
+  },
   setPartsVisible: arr => { parts.forEach((p, i) => { p.visible = arr[i] !== false; p.mesh.visible = p.visible; }); if (selected >= 0 && parts[selected] && !parts[selected].visible) clearSelection(); postVisibility(); postState(); renderTree(); },
   clearSelection,
   setColor: hex => { if (selected < 0 || !parts[selected]) return; parts[selected].mesh.material.color.set(hex); post({ type: 'color', index: selected, color: hex }); postState(); },
