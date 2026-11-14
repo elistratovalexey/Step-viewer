@@ -42,6 +42,7 @@ let radius = 1, triCount = 0, dims = [0, 0, 0], half = [1, 1, 1];
 let wireOn = false, edgesOn = false, orthoOn = false, gridOn = false, darkOn = true;
 let deflection = 0.001, mode = 'select', selected = -1;
 let measures = [], measId = 1, pendingPoint = null, pendingMarker = null;
+let originalStepText = null;
 let sectionState = { show: true, axis: 'x', x: { on: false, off: 0, flip: false }, y: { on: false, off: 0, flip: false }, z: { on: false, off: 0, flip: false } };
 const AX = { x: 0, y: 1, z: 2 };
 
@@ -68,11 +69,12 @@ async function open(url, name) {
     const resp = await fetch(url, { cache: 'no-store' });
     if (!resp.ok) throw new Error('Не удалось прочитать файл (' + resp.status + ')');
     const data = new Uint8Array(await resp.arrayBuffer());
+    const ext = (name.split('.').pop() || '').toLowerCase();
+    originalStepText = (ext === 'step' || ext === 'stp') ? new TextDecoder('utf-8').decode(data) : null;
     post({ type: 'status', text: 'Запуск ядра OpenCascade…' }); await nextFrame();
     const occt = await getOcct();
     post({ type: 'status', text: 'Разбор геометрии и триангуляция…' }); await nextFrame();
     const t0 = performance.now();
-    const ext = (name.split('.').pop() || '').toLowerCase();
     const fn = (ext === 'igs' || ext === 'iges') ? 'ReadIgesFile' : (ext === 'brep') ? 'ReadBrepFile' : 'ReadStepFile';
     const params = { linearUnit: 'millimeter', linearDeflectionType: 'bounding_box_ratio', linearDeflection: deflection, angularDeflection: 0.5 };
     const reader = occt[fn];
@@ -309,12 +311,20 @@ function resetEdits() {
   rebuildSection(); postMeasures(); postState();
 }
 
+function sendBytes(bytes, kind) {
+  const CH = 96 * 1024, n = Math.ceil(bytes.length / CH);
+  for (let s = 0; s < n; s++) {
+    const slice = bytes.subarray(s * CH, (s + 1) * CH);
+    let bin = ''; for (let i = 0; i < slice.length; i++) bin += String.fromCharCode(slice[i]);
+    post({ type: kind + 'Chunk', seq: s, total: n, data: btoa(bin) });
+  }
+}
+
 function exportSTL() {
   const meshes = parts.filter(p => p.visible).map(p => p.mesh);
   let total = 0; meshes.forEach(m => { const g = m.geometry; total += (g.index ? g.index.count : g.attributes.position.count) / 3; });
   if (!total) { post({ type: 'toast', text: 'Нет видимых деталей для экспорта' }); return; }
   if (total > 600000) { post({ type: 'toast', text: 'Экспорт ограничен: >600k треугольников. Скройте лишние детали.' }); return; }
-  post({ type: 'status', text: 'Подготовка STL…' });
   const buf = new ArrayBuffer(84 + total * 50), dv = new DataView(buf);
   dv.setUint32(80, total, true);
   let off = 84;
@@ -332,13 +342,121 @@ function exportSTL() {
       dv.setUint16(off, 0, true); off += 2;
     }
   });
-  const bytes = new Uint8Array(buf), CH = 96 * 1024, n = Math.ceil(bytes.length / CH);
-  for (let s = 0; s < n; s++) {
-    const slice = bytes.subarray(s * CH, (s + 1) * CH);
-    let bin = ''; for (let i = 0; i < slice.length; i++) bin += String.fromCharCode(slice[i]);
-    post({ type: 'stlChunk', seq: s, total: n, data: btoa(bin) });
-  }
+  sendBytes(new Uint8Array(buf), 'stl');
   post({ type: 'stlDone', tris: total });
+}
+
+// ---------- запись цветов в исходный STEP ----------
+function splitStepParams(s) {
+  const out = []; let depth = 0, inStr = false, cur = '';
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) { cur += ch; if (ch === "'") { if (s[i + 1] === "'") { cur += s[i + 1]; i++; } else inStr = false; } continue; }
+    if (ch === "'") { inStr = true; cur += ch; continue; }
+    if (ch === '(') { depth++; cur += ch; continue; }
+    if (ch === ')') { depth--; cur += ch; continue; }
+    if (ch === ',' && depth === 0) { out.push(cur.trim()); cur = ''; continue; }
+    cur += ch;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+function stepRef(p) { const m = /^#(\d+)$/.exec((p || '').trim()); return m ? +m[1] : null; }
+function stepStr(p) { return (p || '').trim().replace(/^'|'$/g, '').replace(/''/g, "'"); }
+function parseStepEntities(text) {
+  const entities = new Map(); let i = 0, maxId = 0;
+  while (i < text.length) {
+    const h = text.indexOf('#', i); if (h < 0) break;
+    let j = h + 1, idStr = '';
+    while (j < text.length && text[j] >= '0' && text[j] <= '9') { idStr += text[j]; j++; }
+    if (!idStr) { i = h + 1; continue; }
+    while (j < text.length && /\s/.test(text[j])) j++;
+    if (text[j] !== '=') { i = j; continue; }
+    j++;
+    const start = j; let inStr = false, k = j;
+    while (k < text.length) {
+      const ch = text[k];
+      if (inStr) { if (ch === "'") { if (text[k + 1] === "'") { k += 2; continue; } inStr = false; } k++; continue; }
+      if (ch === "'") { inStr = true; k++; continue; }
+      if (ch === ';') break;
+      k++;
+    }
+    if (k >= text.length) break;
+    const body = text.slice(start, k).trim();
+    const m = /^([A-Za-z0-9_]+)\s*\(/.exec(body);
+    if (m) {
+      const id = +idStr;
+      const params = body.slice(m[0].length, body.lastIndexOf(')'));
+      entities.set(id, { id, type: m[1].toUpperCase(), params, raw: text.slice(h, k + 1) });
+      if (id > maxId) maxId = id;
+    }
+    i = k + 1;
+  }
+  return { entities, maxId };
+}
+function buildEditedStep(text) {
+  const parsed = parseStepEntities(text);
+  const entities = parsed.entities;
+  const products = new Map(), pdf = new Map(), pd = new Map(), pds = new Map(), sdr = [];
+  for (const e of entities.values()) {
+    const ps = splitStepParams(e.params);
+    if (e.type === 'PRODUCT') products.set(e.id, stepStr(ps[1]));
+    else if (e.type === 'PRODUCT_DEFINITION_FORMATION') pdf.set(e.id, stepRef(ps[2]));
+    else if (e.type === 'PRODUCT_DEFINITION') pd.set(e.id, stepRef(ps[2]));
+    else if (e.type === 'PRODUCT_DEFINITION_SHAPE') pds.set(e.id, stepRef(ps[2]));
+    else if (e.type === 'SHAPE_DEFINITION_REPRESENTATION') sdr.push({ def: stepRef(ps[0]), rep: stepRef(ps[1]) });
+  }
+  const nameToRep = new Map();
+  for (const r of sdr) {
+    const pdId = pds.get(r.def); if (pdId == null) continue;
+    const formId = pd.get(pdId); if (formId == null) continue;
+    const prodId = pdf.get(formId); if (prodId == null) continue;
+    const name = products.get(prodId); if (name == null) continue;
+    if (!nameToRep.has(name)) nameToRep.set(name, r.rep);
+  }
+  const targets = new Map();
+  for (const p of parts) {
+    if (!p.visible) continue;
+    const hex = '#' + p.mesh.material.color.getHexString();
+    const rep = nameToRep.get(p.name);
+    if (rep == null) continue;
+    if (!targets.has(rep)) targets.set(rep, hex);
+  }
+  if (!targets.size) return null;
+  let out = text;
+  for (const e of entities.values()) {
+    if (e.type !== 'STYLED_ITEM') continue;
+    const ps = splitStepParams(e.params);
+    const target = stepRef(ps[ps.length - 1]);
+    if (target != null && targets.has(target)) out = out.replace(e.raw, '');
+  }
+  let id = parsed.maxId;
+  const add = [];
+  for (const [rep, hex] of targets) {
+    const r = parseInt(hex.slice(1, 3), 16) / 255, g = parseInt(hex.slice(3, 5), 16) / 255, b = parseInt(hex.slice(5, 7), 16) / 255;
+    const c = ++id, fac = ++id, fa = ++id, ssfa = ++id, sss = ++id, ssu = ++id, psa = ++id, si = ++id;
+    add.push('#' + c + " = COLOUR_RGB(''," + r.toFixed(6) + ',' + g.toFixed(6) + ',' + b.toFixed(6) + ');');
+    add.push('#' + fac + " = FILL_AREA_STYLE_COLOUR('',#" + c + ');');
+    add.push('#' + fa + " = FILL_AREA_STYLE('',(#" + fac + '));');
+    add.push('#' + ssfa + ' = SURFACE_STYLE_FILL_AREA(#' + fa + ');');
+    add.push('#' + sss + " = SURFACE_SIDE_STYLE('',(#" + ssfa + '));');
+    add.push('#' + ssu + ' = SURFACE_STYLE_USAGE(.BOTH.,#' + sss + ');');
+    add.push('#' + psa + ' = PRESENTATION_STYLE_ASSIGNMENT((#' + ssu + '));');
+    add.push('#' + si + " = STYLED_ITEM('',(#" + psa + '),#' + rep + ');');
+  }
+  const endIdx = out.indexOf('END-ISO-10303-21');
+  const secIdx = out.lastIndexOf('ENDSEC;', endIdx < 0 ? out.length : endIdx);
+  if (secIdx < 0) return null;
+  out = out.slice(0, secIdx) + '\n' + add.join('\n') + '\n' + out.slice(secIdx);
+  return { text: out, matched: targets.size };
+}
+function exportStepEdited() {
+  if (!originalStepText) { post({ type: 'toast', text: 'Запись в STEP доступна только для исходных .step/.stp' }); return; }
+  let result;
+  try { result = buildEditedStep(originalStepText); } catch (e) { result = null; }
+  if (!result) { post({ type: 'toast', text: 'Не удалось сопоставить детали с именем продукта в STEP. Цвета сохранены в проекте JSON.' }); return; }
+  sendBytes(new TextEncoder().encode(result.text), 'step');
+  post({ type: 'stepDone', matched: result.matched });
 }
 
 window.SV = {
@@ -358,6 +476,6 @@ window.SV = {
   clearMeasures: () => clearMeasures(false),
   deleteMeasure,
   requestState: () => post({ type: 'state', state: gatherState() }),
-  applyState, resetEdits, exportSTL
+  applyState, resetEdits, exportSTL, exportStepEdited
 };
 post({ type: 'ready' });
