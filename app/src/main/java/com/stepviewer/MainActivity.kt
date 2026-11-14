@@ -346,6 +346,9 @@ class MainActivity : AppCompatActivity() {
     }
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         when (item.itemId) {
+            R.id.action_info -> AlertDialog.Builder(this).setTitle("Свойства модели")
+                .setMessage("STEP Viewer ${BuildConfig.VERSION_NAME} (сборка ${BuildConfig.VERSION_CODE})\n\n$info")
+                .setPositiveButton("OK", null).show()
             R.id.action_open -> picker.launch(arrayOf("*/*"))
             R.id.action_fit -> js("SV.fit()")
             R.id.view_iso -> js("SV.setView('iso')")
