@@ -1,8 +1,13 @@
 import java.io.File
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
+
+val ciCode = (project.findProperty("ciVersionCode") as String?)?.toIntOrNull() ?: 1
+val ciName = (project.findProperty("ciVersionName") as String?) ?: "1.0"
+val stableKey = rootProject.file("signing/stepviewer.jks")
 
 android {
     namespace = "com.stepviewer"
@@ -12,16 +17,30 @@ android {
         applicationId = "com.stepviewer"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = ciCode
+        versionName = ciName
+    }
+
+    signingConfigs {
+        create("stable") {
+            if (stableKey.exists()) {
+                storeFile = stableKey
+                storePassword = "stepviewer"
+                keyAlias = "stepviewer"
+                keyPassword = "stepviewer"
+            }
+        }
     }
 
     buildTypes {
-        debug { isMinifyEnabled = false }
+        debug {
+            isMinifyEnabled = false
+            if (stableKey.exists()) signingConfig = signingConfigs.getByName("stable")
+        }
         release {
             isMinifyEnabled = false
-            // чтобы APK из CI можно было сразу поставить, подписываем debug-ключом
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (stableKey.exists()) signingConfigs.getByName("stable")
+                            else signingConfigs.getByName("debug")
         }
     }
 
@@ -41,7 +60,6 @@ dependencies {
     implementation("androidx.webkit:webkit:1.11.0")
 }
 
-// Понятная ошибка, если веб-библиотеки не скачаны
 tasks.register("checkWebLibs") {
     doLast {
         val lib = file("src/main/assets/viewer/lib")
