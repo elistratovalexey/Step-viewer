@@ -109,6 +109,7 @@ class MainActivity : AppCompatActivity() {
         toolbar = findViewById(R.id.toolbar)
         setSupportActionBar(toolbar)
         supportActionBar?.title = getString(R.string.app_name)
+        supportActionBar?.subtitle = "версия ${BuildConfig.VERSION_NAME}"
         loading = findViewById(R.id.loading)
         status = findViewById(R.id.status)
         empty = findViewById(R.id.empty)
