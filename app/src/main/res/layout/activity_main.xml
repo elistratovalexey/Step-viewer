@@ -168,8 +168,7 @@
                 android:paddingRight="4dp">
                 <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnMeasList" style="@style/DeckButton" android:text="Измерения (0)" />
                 <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnMeasClear" style="@style/DeckButton" android:text="Очистить" />
-                <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnSave" style="@style/DeckButton" android:text="Проект JSON" />
-                <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnStep" style="@style/DeckButton" android:text="Записать STEP" />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnSave" style="@style/DeckButton" android:text="Сохранить" />
                 <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnExport" style="@style/DeckButton" android:text="Экспорт STL" />
             </LinearLayout>
         </HorizontalScrollView>
