@@ -170,6 +170,8 @@
                 <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnMeasClear" style="@style/DeckButton" android:text="Очистить" />
                 <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnSave" style="@style/DeckButton" android:text="Сохранить" />
                 <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnExport" style="@style/DeckButton" android:text="Экспорт STL" />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnStep" style="@style/DeckButton" android:text="Экспорт STEP" />
+                
             </LinearLayout>
         </HorizontalScrollView>
     </LinearLayout>
