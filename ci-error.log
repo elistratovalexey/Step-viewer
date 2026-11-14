@@ -1,14 +1,12 @@
-> Task :app:javaPreCompileRelease
 > Task :app:extractProguardFiles
 > Task :app:mergeReleaseJniLibFolders
 > Task :app:mergeReleaseNativeLibs NO-SOURCE
 > Task :app:stripReleaseDebugSymbols NO-SOURCE
 > Task :app:extractReleaseNativeSymbolTables NO-SOURCE
 > Task :app:mergeReleaseNativeDebugMetadata NO-SOURCE
-> Task :app:processReleaseManifestForPackage
-> Task :app:checkReleaseDuplicateClasses
 > Task :app:desugarReleaseFileDependencies
 > Task :app:mergeReleaseStartupProfile
+> Task :app:checkReleaseDuplicateClasses
 > Task :app:mergeReleaseArtProfile
 > Task :app:mergeReleaseShaders
 > Task :app:compileReleaseShaders NO-SOURCE
@@ -25,9 +23,11 @@
 > Task :app:optimizeReleaseResources
 > Task :app:mergeExtDexRelease
 
+> Task :app:compileReleaseKotlin
+e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:168:35 Unresolved reference: btnStep
+
 > Task :app:compileReleaseKotlin FAILED
-e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:167:35 Unresolved reference: btnStep
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build-1794664246822.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build-1794664450824.json
 
 FAILURE: Build failed with an exception.
 
@@ -296,5 +296,5 @@ Caused by: org.jetbrains.kotlin.gradle.tasks.CompilationErrorException: Compilat
 	... 2 more
 
 
-BUILD FAILED in 28s
+BUILD FAILED in 19s
 36 actionable tasks: 36 executed
