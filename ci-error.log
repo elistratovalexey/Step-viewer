@@ -1,33 +1,33 @@
-> Task :app:extractDeepLinksRelease
-> Task :app:parseReleaseLocalResources
 > Task :app:processReleaseMainManifest
 > Task :app:mergeReleaseResources
 > Task :app:processReleaseManifest
+> Task :app:processReleaseManifestForPackage
 > Task :app:javaPreCompileRelease
 > Task :app:desugarReleaseFileDependencies
 > Task :app:mergeReleaseStartupProfile
-> Task :app:processReleaseManifestForPackage
 > Task :app:mergeReleaseArtProfile
 > Task :app:mergeReleaseShaders
 > Task :app:compileReleaseShaders NO-SOURCE
 > Task :app:generateReleaseAssets UP-TO-DATE
 > Task :app:mergeReleaseAssets
-> Task :app:compressReleaseAssets
 > Task :app:extractReleaseVersionControlInfo
+> Task :app:compressReleaseAssets
 > Task :app:collectReleaseDependencies
-> Task :app:processReleaseResources
 > Task :app:sdkReleaseDependencyData
 > Task :app:validateSigningRelease
 > Task :app:writeReleaseAppMetadata
 > Task :app:writeReleaseSigningConfigVersions
+> Task :app:processReleaseResources
 > Task :app:optimizeReleaseResources
 > Task :app:mergeExtDexRelease
 
 > Task :app:compileReleaseKotlin
-e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:168:35 Unresolved reference: btnStep
+e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:126:40 Unresolved reference: modePoint
+e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:127:35 Unresolved reference: btnSnap
+e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:128:35 Unresolved reference: btnTree
 
 > Task :app:compileReleaseKotlin FAILED
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build-1794665197587.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build-1794666376319.json
 
 FAILURE: Build failed with an exception.
 
@@ -296,5 +296,5 @@ Caused by: org.jetbrains.kotlin.gradle.tasks.CompilationErrorException: Compilat
 	... 2 more
 
 
-BUILD FAILED in 28s
+BUILD FAILED in 24s
 35 actionable tasks: 35 executed
