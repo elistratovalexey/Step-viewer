@@ -23,18 +23,18 @@ Daemon will be stopped at the end of the build
 > Task :app:mergeReleaseNativeLibs NO-SOURCE
 > Task :app:stripReleaseDebugSymbols NO-SOURCE
 > Task :app:extractReleaseNativeSymbolTables NO-SOURCE
+> Task :app:processReleaseManifestForPackage
 > Task :app:mergeReleaseNativeDebugMetadata NO-SOURCE
 > Task :app:desugarReleaseFileDependencies
-> Task :app:checkReleaseDuplicateClasses
 > Task :app:mergeReleaseStartupProfile
-> Task :app:processReleaseManifestForPackage
+> Task :app:checkReleaseDuplicateClasses
 > Task :app:mergeReleaseArtProfile
 > Task :app:mergeReleaseShaders
 > Task :app:compileReleaseShaders NO-SOURCE
 > Task :app:generateReleaseAssets UP-TO-DATE
 > Task :app:mergeReleaseAssets
-> Task :app:extractReleaseVersionControlInfo
 > Task :app:compressReleaseAssets
+> Task :app:extractReleaseVersionControlInfo
 > Task :app:collectReleaseDependencies
 > Task :app:sdkReleaseDependencyData
 > Task :app:validateSigningRelease
@@ -46,7 +46,7 @@ Daemon will be stopped at the end of the build
 
 > Task :app:compileReleaseKotlin FAILED
 e: file:///home/runner/work/Step-viewer/Step-viewer/app/src/main/java/com/stepviewer/MainActivity.kt:168:35 Unresolved reference: btnStep
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build-1794664524970.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build-1794664725888.json
 
 FAILURE: Build failed with an exception.
 
@@ -255,5 +255,5 @@ Caused by: org.jetbrains.kotlin.gradle.tasks.CompilationErrorException: Compilat
 	... 2 more
 
 
-BUILD FAILED in 21s
+BUILD FAILED in 27s
 36 actionable tasks: 36 executed
