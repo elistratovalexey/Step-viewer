@@ -1,8 +1,10 @@
 package com.stepviewer
 
 import android.annotation.SuppressLint
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
-import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -45,6 +47,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var bGrid: Button
     private lateinit var bModeSelect: Button
     private lateinit var bModeMeasure: Button
+    private lateinit var bModePoint: Button
+    private lateinit var bSnap: Button
+    private lateinit var bTree: Button
     private lateinit var secX: Button
     private lateinit var secY: Button
     private lateinit var secZ: Button
@@ -67,6 +72,8 @@ class MainActivity : AppCompatActivity() {
     private var selIndex = -1
     private var selName = ""
     private var mode = "select"
+    private var snap = true
+    private var treeOpen = false
     private var wire = false
     private var edges = false
     private var ortho = false
@@ -75,10 +82,8 @@ class MainActivity : AppCompatActivity() {
     private var deflection = 0.001
     private var latestState = ""
     private var measList = JSONArray()
-    private var stlBuf = ByteArrayOutputStream()
-    private var stlBytes = ByteArray(0)
-    private var stepBuf = ByteArrayOutputStream()
-    private var stepBytes = ByteArray(0)
+    private var fileBuf = ByteArrayOutputStream()
+    private var fileBytes = ByteArray(0)
     private val handler = Handler(Looper.getMainLooper())
     private var autosave: Runnable? = null
     private val secState = JSONObject("""{"show":true,"axis":"x","x":{"on":false,"off":0,"flip":false},"y":{"on":false,"off":0,"flip":false},"z":{"on":false,"off":0,"flip":false}}""")
@@ -96,11 +101,8 @@ class MainActivity : AppCompatActivity() {
     private val loadProject = registerForActivityResult(ActivityResultContracts.OpenDocument()) { u ->
         if (u != null) readText(u)?.let { js("SV.applyState($it)") }
     }
-    private val saveStl = registerForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { u ->
-        if (u != null && stlBytes.isNotEmpty()) writeBytes(u, stlBytes, "STL")
-    }
-    private val saveStep = registerForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { u ->
-        if (u != null && stepBytes.isNotEmpty()) writeBytes(u, stepBytes, "STEP")
+    private val saveBinary = registerForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { u ->
+        if (u != null && fileBytes.isNotEmpty()) writeBytes(u, fileBytes)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -121,6 +123,9 @@ class MainActivity : AppCompatActivity() {
         bGrid = findViewById(R.id.btnGrid)
         bModeSelect = findViewById(R.id.modeSelect)
         bModeMeasure = findViewById(R.id.modeMeasure)
+        bModePoint = findViewById(R.id.modePoint)
+        bSnap = findViewById(R.id.btnSnap)
+        bTree = findViewById(R.id.btnTree)
         secX = findViewById(R.id.secAxisX)
         secY = findViewById(R.id.secAxisY)
         secZ = findViewById(R.id.secAxisZ)
@@ -146,6 +151,9 @@ class MainActivity : AppCompatActivity() {
         bGrid.setOnClickListener { grid = !grid; js("SV.setGrid($grid)"); updateDeck() }
         bModeSelect.setOnClickListener { setMode("select") }
         bModeMeasure.setOnClickListener { setMode("measure") }
+        bModePoint.setOnClickListener { setMode("point") }
+        bSnap.setOnClickListener { snap = !snap; js("SV.setSnap($snap)"); updateDeck() }
+        bTree.setOnClickListener { treeOpen = !treeOpen; js("SV.setTreeOpen($treeOpen)"); updateDeck() }
         secX.setOnClickListener { setAxis("x") }
         secY.setOnClickListener { setAxis("y") }
         secZ.setOnClickListener { setAxis("z") }
@@ -165,9 +173,14 @@ class MainActivity : AppCompatActivity() {
         bMeasList.setOnClickListener { measuresDialog() }
         findViewById<Button>(R.id.btnMeasClear).setOnClickListener { js("SV.clearMeasures()") }
         findViewById<Button>(R.id.btnSave).setOnClickListener { js("SV.requestState()"); saveProject.launch(baseName() + ".stepview.json") }
-        findViewById<Button>(R.id.btnStep).setOnClickListener { stepBuf = ByteArrayOutputStream(); stepBytes = ByteArray(0); js("SV.exportStepEdited()") }
-        findViewById<Button>(R.id.btnExport).setOnClickListener { stlBuf = ByteArrayOutputStream(); stlBytes = ByteArray(0); js("SV.exportSTL()") }
+        findViewById<Button>(R.id.btnExport).setOnClickListener { startExport("SV.exportSTL()") }
+        findViewById<Button>(R.id.btnStep).setOnClickListener { startExport("SV.exportSTEP()") }
         updateDeck(); updateSectionUi()
+    }
+
+    private fun startExport(call: String) {
+        fileBuf = ByteArrayOutputStream(); fileBytes = ByteArray(0)
+        js(call)
     }
 
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); handleIntent(intent) }
@@ -203,20 +216,25 @@ class MainActivity : AppCompatActivity() {
         when (o.optString("type")) {
             "ready" -> { ready = true; pushSettings(); pending?.let { pending = null; startLoad(it) } }
             "status" -> status.text = o.optString("text")
-            "toast" -> Toast.makeText(this, o.optString("text"), Toast.LENGTH_SHORT).show()
-            "measureHint" -> { hint.text = o.optString("text"); hint.visibility = if (mode == "measure" && o.optString("text").isNotEmpty()) View.VISIBLE else View.GONE }
+            "toast" -> Toast.makeText(this, o.optString("text"), Toast.LENGTH_LONG).show()
+            "measureHint" -> { val t = o.optString("text"); hint.text = t; hint.visibility = if (mode == "measure" && t.isNotEmpty()) View.VISIBLE else View.GONE }
             "select" -> { selIndex = o.optInt("index", -1); selName = o.optString("name"); supportActionBar?.subtitle = "▣ $selName"; if (selIndex >= 0) selectionDialog() }
             "deselect" -> { selIndex = -1; selName = ""; supportActionBar?.subtitle = stats }
+            "treeSelect" -> { supportActionBar?.subtitle = "▣ ${o.optString("name")} · ${o.optInt("count")} дет." }
+            "tree" -> { treeOpen = o.optBoolean("open"); updateDeck() }
+            "mode" -> { mode = o.optString("mode", "select"); hint.visibility = if (mode == "measure" || mode == "point") View.VISIBLE else View.GONE; hint.text = if (mode == "point") "Тапните точку для координат XYZ" else if (mode == "measure") "Тапните первую точку" else ""; updateDeck() }
             "measures" -> { measList = o.optJSONArray("list") ?: JSONArray(); bMeasList.text = "Измерения (${measList.length()})" }
-            "state" -> { latestState = o.optJSONObject("state")?.toString() ?: ""; scheduleAutosave() }
-            "stlChunk" -> { if (o.optInt("seq") == 0) stlBuf = ByteArrayOutputStream(); stlBuf.write(Base64.decode(o.optString("data"), Base64.DEFAULT)) }
-            "stlDone" -> { stlBytes = stlBuf.toByteArray(); saveStl.launch(baseName() + ".stl") }
-            "stepChunk" -> { if (o.optInt("seq") == 0) stepBuf = ByteArrayOutputStream(); stepBuf.write(Base64.decode(o.optString("data"), Base64.DEFAULT)) }
-            "stepDone" -> {
-                stepBytes = stepBuf.toByteArray()
-                Toast.makeText(this, "STEP подготовлен: цветов записано ${o.optInt("matched")}", Toast.LENGTH_SHORT).show()
-                saveStep.launch(baseName() + "_edited.step")
+            "points" -> { }
+            "point" -> { supportActionBar?.subtitle = "XYZ: ${fmt(o.optDouble("x"))}, ${fmt(o.optDouble("y"))}, ${fmt(o.optDouble("z"))}" }
+            "visibility" -> { val a = o.optJSONArray("arr"); if (a != null) visible = BooleanArray(a.length()) { a.optBoolean(it, true) } }
+            "copy" -> {
+                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("XYZ", o.optString("text")))
+                Toast.makeText(this, "Координаты скопированы", Toast.LENGTH_SHORT).show()
             }
+            "state" -> { latestState = o.optJSONObject("state")?.toString() ?: ""; scheduleAutosave() }
+            "fileChunk" -> { if (o.optInt("seq") == 0) fileBuf = ByteArrayOutputStream(); fileBuf.write(Base64.decode(o.optString("data"), Base64.DEFAULT)) }
+            "fileDone" -> { fileBytes = fileBuf.toByteArray(); saveBinary.launch(o.optString("name", baseName() + ".bin")) }
             "loaded" -> {
                 loading.visibility = View.GONE; empty.visibility = View.GONE; deck.visibility = View.VISIBLE
                 selIndex = -1
@@ -274,20 +292,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun js(code: String) = web.evaluateJavascript("window.SV && ($code)", null)
-    private fun pushSettings() = js("SV.setWireframe($wire), SV.setEdges($edges), SV.setOrtho($ortho), SV.setGrid($grid), SV.setDark($dark), SV.setQuality($deflection), SV.setMode(${JSONObject.quote(mode)}), SV.setSection($secState)")
+    private fun pushSettings() = js(
+        "SV.setWireframe($wire), SV.setEdges($edges), SV.setOrtho($ortho), SV.setGrid($grid), SV.setDark($dark), SV.setQuality($deflection), SV.setSnap($snap), SV.setMode(${JSONObject.quote(mode)}), SV.setSection($secState)"
+    )
 
     private fun chip(b: Button, on: Boolean, accent: Int = 0xFF1E88E5.toInt()) {
         b.setBackgroundColor(if (on) accent else 0x00000000)
         b.setTextColor(if (on) 0xFFFFFFFF.toInt() else 0xFF90A4AE.toInt())
         b.setTypeface(null, if (on) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
     }
-
-
     private fun updateDeck() {
-        chip(bModeSelect, mode == "select"); chip(bModeMeasure, mode == "measure", 0xFFF59E0B.toInt())
+        chip(bModeSelect, mode == "select"); chip(bModeMeasure, mode == "measure", 0xFFF59E0B.toInt()); chip(bModePoint, mode == "point", 0xFFF59E0B.toInt())
+        chip(bSnap, snap, 0xFF22C55E.toInt()); chip(bTree, treeOpen)
         chip(bWire, wire); chip(bEdges, edges); chip(bOrtho, ortho); chip(bGrid, grid)
     }
-    private fun setMode(m: String) { mode = m; js("SV.setMode(${JSONObject.quote(m)})"); hint.visibility = if (m == "measure") View.VISIBLE else View.GONE; if (m == "measure") hint.text = "Тапните первую точку"; updateDeck() }
+    private fun setMode(m: String) {
+        mode = m; js("SV.setMode(${JSONObject.quote(m)})")
+        hint.visibility = if (m != "select") View.VISIBLE else View.GONE
+        hint.text = when (m) { "measure" -> "Тапните первую точку"; "point" -> "Тапните точку для координат XYZ"; else -> "" }
+        updateDeck()
+    }
     private fun toggleWire() { wire = !wire; js("SV.setWireframe($wire)"); updateDeck(); invalidateOptionsMenu() }
     private fun toggleEdges() { edges = !edges; js("SV.setEdges($edges)"); updateDeck(); invalidateOptionsMenu() }
     private fun toggleOrtho() { ortho = !ortho; js("SV.setOrtho($ortho)"); updateDeck(); invalidateOptionsMenu() }
@@ -320,7 +344,7 @@ class MainActivity : AppCompatActivity() {
         AlertDialog.Builder(this).setTitle("Цвет: $selName").setItems(palette.map { it.first }.toTypedArray()) { _, w -> js("SV.setColor(${JSONObject.quote(palette[w].second)})") }.show()
     }
     private fun measuresDialog() {
-        if (measList.length() == 0) { Toast.makeText(this, "Измерений пока нет. Включите режим «Измерение» и тапните две точки.", Toast.LENGTH_LONG).show(); return }
+        if (measList.length() == 0) { Toast.makeText(this, "Измерений пока нет. Включите «Измерение» и тапните две точки.", Toast.LENGTH_LONG).show(); return }
         val items = Array(measList.length()) { i -> val m = measList.getJSONObject(i); val d = m.optDouble("d"); "№${m.optInt("id")}  —  " + if (d >= 1000) fmt(d / 1000) + " м" else fmt(d) + " мм" }
         AlertDialog.Builder(this).setTitle("Измерения — тап для удаления").setItems(items) { _, w -> js("SV.deleteMeasure(${measList.getJSONObject(w).optInt("id")})") }
             .setNeutralButton("Очистить все") { _, _ -> js("SV.clearMeasures()") }.setPositiveButton("Закрыть", null).show()
@@ -336,7 +360,7 @@ class MainActivity : AppCompatActivity() {
     private fun loadInternalProject() { try { val f = internalProject(); if (f.exists()) js("SV.applyState(${f.readText()})") } catch (_: Exception) {} }
     private fun writeText(u: Uri, s: String) { try { contentResolver.openOutputStream(u)?.use { it.write(s.toByteArray()) }; Toast.makeText(this, "Проект сохранён", Toast.LENGTH_SHORT).show() } catch (e: Exception) { Toast.makeText(this, "Ошибка сохранения: ${e.message}", Toast.LENGTH_LONG).show() } }
     private fun readText(u: Uri): String? = try { contentResolver.openInputStream(u)?.use { it.readBytes().toString(Charsets.UTF_8) } } catch (_: Exception) { null }
-    private fun writeBytes(u: Uri, b: ByteArray, kind: String) { try { contentResolver.openOutputStream(u)?.use { it.write(b) }; Toast.makeText(this, "$kind сохранён (${b.size / 1048576} МБ)", Toast.LENGTH_SHORT).show() } catch (e: Exception) { Toast.makeText(this, "Ошибка экспорта: ${e.message}", Toast.LENGTH_LONG).show() } }
+    private fun writeBytes(u: Uri, b: ByteArray) { try { contentResolver.openOutputStream(u)?.use { it.write(b) }; Toast.makeText(this, "Файл сохранён (${b.size / 1048576} МБ)", Toast.LENGTH_LONG).show() } catch (e: Exception) { Toast.makeText(this, "Ошибка экспорта: ${e.message}", Toast.LENGTH_LONG).show() } }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean { menuInflater.inflate(R.menu.main, menu); return true }
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {
@@ -346,9 +370,6 @@ class MainActivity : AppCompatActivity() {
     }
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         when (item.itemId) {
-            R.id.action_info -> AlertDialog.Builder(this).setTitle("Свойства модели")
-                .setMessage("STEP Viewer ${BuildConfig.VERSION_NAME} (сборка ${BuildConfig.VERSION_CODE})\n\n$info")
-                .setPositiveButton("OK", null).show()
             R.id.action_open -> picker.launch(arrayOf("*/*"))
             R.id.action_fit -> js("SV.fit()")
             R.id.view_iso -> js("SV.setView('iso')")
@@ -364,6 +385,9 @@ class MainActivity : AppCompatActivity() {
             R.id.action_grid -> { grid = !grid; js("SV.setGrid($grid)"); updateDeck() }
             R.id.action_dark -> { dark = !dark; js("SV.setDark($dark)") }
             R.id.action_parts -> partsDialog()
+            R.id.action_info -> AlertDialog.Builder(this).setTitle("Свойства модели")
+                .setMessage("STEP Viewer ${BuildConfig.VERSION_NAME} (сборка ${BuildConfig.VERSION_CODE})\n\n$info")
+                .setPositiveButton("OK", null).show()
             R.id.action_load_project -> loadProject.launch(arrayOf("application/json", "text/plain", "*/*"))
             R.id.action_reset -> { try { internalProject().delete() } catch (_: Exception) {}; js("SV.resetEdits()"); Toast.makeText(this, "Изменения сброшены", Toast.LENGTH_SHORT).show() }
             R.id.q_low, R.id.q_mid, R.id.q_high -> {
