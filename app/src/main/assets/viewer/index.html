@@ -6,16 +6,27 @@
 <title>STEP Viewer</title>
 <link rel="stylesheet" href="style.css">
 <script type="importmap">
-{
-  "imports": {
-    "three": "./lib/three.module.js",
-    "three/addons/": "./lib/addons/"
-  }
-}
+{ "imports": { "three": "./lib/three.module.js", "three/addons/": "./lib/addons/" } }
 </script>
 </head>
 <body>
 <canvas id="c"></canvas>
+
+<div id="treePanel" class="panel hidden">
+  <div class="phead"><span>Дерево сборки</span><button id="treeClose" class="iconbtn">✕</button></div>
+  <input id="treeSearch" class="psearch" type="search" placeholder="Поиск детали или узла…">
+  <div id="treeBody" class="pbody"></div>
+  <div class="pfoot">
+    <button id="treeShowAll" class="pbtn">Показать все</button>
+    <button id="treeIsolate" class="pbtn accent">Изолировать</button>
+  </div>
+</div>
+
+<div id="pointPanel" class="panel right hidden">
+  <div class="phead"><span>Координаты XYZ</span><button id="pointClose" class="iconbtn">✕</button></div>
+  <div id="pointBody" class="pbody"></div>
+</div>
+
 <script src="lib/occt-import-js.js"></script>
 <script type="module" src="viewer.js"></script>
 </body>
