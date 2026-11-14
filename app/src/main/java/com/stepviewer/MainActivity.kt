@@ -2,6 +2,7 @@ package com.stepviewer
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -76,6 +77,8 @@ class MainActivity : AppCompatActivity() {
     private var measList = JSONArray()
     private var stlBuf = ByteArrayOutputStream()
     private var stlBytes = ByteArray(0)
+    private var stepBuf = ByteArrayOutputStream()
+    private var stepBytes = ByteArray(0)
     private val handler = Handler(Looper.getMainLooper())
     private var autosave: Runnable? = null
     private val secState = JSONObject("""{"show":true,"axis":"x","x":{"on":false,"off":0,"flip":false},"y":{"on":false,"off":0,"flip":false},"z":{"on":false,"off":0,"flip":false}}""")
@@ -94,7 +97,10 @@ class MainActivity : AppCompatActivity() {
         if (u != null) readText(u)?.let { js("SV.applyState($it)") }
     }
     private val saveStl = registerForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { u ->
-        if (u != null && stlBytes.isNotEmpty()) writeBytes(u, stlBytes)
+        if (u != null && stlBytes.isNotEmpty()) writeBytes(u, stlBytes, "STL")
+    }
+    private val saveStep = registerForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { u ->
+        if (u != null && stepBytes.isNotEmpty()) writeBytes(u, stepBytes, "STEP")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -158,6 +164,7 @@ class MainActivity : AppCompatActivity() {
         bMeasList.setOnClickListener { measuresDialog() }
         findViewById<Button>(R.id.btnMeasClear).setOnClickListener { js("SV.clearMeasures()") }
         findViewById<Button>(R.id.btnSave).setOnClickListener { js("SV.requestState()"); saveProject.launch(baseName() + ".stepview.json") }
+        findViewById<Button>(R.id.btnStep).setOnClickListener { stepBuf = ByteArrayOutputStream(); stepBytes = ByteArray(0); js("SV.exportStepEdited()") }
         findViewById<Button>(R.id.btnExport).setOnClickListener { stlBuf = ByteArrayOutputStream(); stlBytes = ByteArray(0); js("SV.exportSTL()") }
         updateDeck(); updateSectionUi()
     }
@@ -203,6 +210,12 @@ class MainActivity : AppCompatActivity() {
             "state" -> { latestState = o.optJSONObject("state")?.toString() ?: ""; scheduleAutosave() }
             "stlChunk" -> { if (o.optInt("seq") == 0) stlBuf = ByteArrayOutputStream(); stlBuf.write(Base64.decode(o.optString("data"), Base64.DEFAULT)) }
             "stlDone" -> { stlBytes = stlBuf.toByteArray(); saveStl.launch(baseName() + ".stl") }
+            "stepChunk" -> { if (o.optInt("seq") == 0) stepBuf = ByteArrayOutputStream(); stepBuf.write(Base64.decode(o.optString("data"), Base64.DEFAULT)) }
+            "stepDone" -> {
+                stepBytes = stepBuf.toByteArray()
+                Toast.makeText(this, "STEP подготовлен: цветов записано ${o.optInt("matched")}", Toast.LENGTH_SHORT).show()
+                saveStep.launch(baseName() + "_edited.step")
+            }
             "loaded" -> {
                 loading.visibility = View.GONE; empty.visibility = View.GONE; deck.visibility = View.VISIBLE
                 selIndex = -1
@@ -263,8 +276,14 @@ class MainActivity : AppCompatActivity() {
     private fun pushSettings() = js("SV.setWireframe($wire), SV.setEdges($edges), SV.setOrtho($ortho), SV.setGrid($grid), SV.setDark($dark), SV.setQuality($deflection), SV.setMode(${JSONObject.quote(mode)}), SV.setSection($secState)")
 
     private fun chip(b: Button, on: Boolean, accent: Int = 0xFF1E88E5.toInt()) {
-        b.setBackgroundColor(if (on) accent else 0x00000000)
+        val bg = GradientDrawable().apply {
+            cornerRadius = 12f
+            setColor(if (on) accent else 0x00000000)
+            setStroke(2, if (on) 0xFFFFFFFF.toInt() else 0xFF2A3441.toInt())
+        }
+        b.background = bg
         b.setTextColor(if (on) 0xFFFFFFFF.toInt() else 0xFFB0BEC5.toInt())
+        b.invalidate()
     }
     private fun updateDeck() {
         chip(bModeSelect, mode == "select"); chip(bModeMeasure, mode == "measure", 0xFFF59E0B.toInt())
@@ -319,7 +338,7 @@ class MainActivity : AppCompatActivity() {
     private fun loadInternalProject() { try { val f = internalProject(); if (f.exists()) js("SV.applyState(${f.readText()})") } catch (_: Exception) {} }
     private fun writeText(u: Uri, s: String) { try { contentResolver.openOutputStream(u)?.use { it.write(s.toByteArray()) }; Toast.makeText(this, "Проект сохранён", Toast.LENGTH_SHORT).show() } catch (e: Exception) { Toast.makeText(this, "Ошибка сохранения: ${e.message}", Toast.LENGTH_LONG).show() } }
     private fun readText(u: Uri): String? = try { contentResolver.openInputStream(u)?.use { it.readBytes().toString(Charsets.UTF_8) } } catch (_: Exception) { null }
-    private fun writeBytes(u: Uri, b: ByteArray) { try { contentResolver.openOutputStream(u)?.use { it.write(b) }; Toast.makeText(this, "STL сохранён (${b.size / 1048576} МБ)", Toast.LENGTH_SHORT).show() } catch (e: Exception) { Toast.makeText(this, "Ошибка экспорта: ${e.message}", Toast.LENGTH_LONG).show() } }
+    private fun writeBytes(u: Uri, b: ByteArray, kind: String) { try { contentResolver.openOutputStream(u)?.use { it.write(b) }; Toast.makeText(this, "$kind сохранён (${b.size / 1048576} МБ)", Toast.LENGTH_SHORT).show() } catch (e: Exception) { Toast.makeText(this, "Ошибка экспорта: ${e.message}", Toast.LENGTH_LONG).show() } }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean { menuInflater.inflate(R.menu.main, menu); return true }
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {
@@ -344,7 +363,6 @@ class MainActivity : AppCompatActivity() {
             R.id.action_grid -> { grid = !grid; js("SV.setGrid($grid)"); updateDeck() }
             R.id.action_dark -> { dark = !dark; js("SV.setDark($dark)") }
             R.id.action_parts -> partsDialog()
-            R.id.action_info -> AlertDialog.Builder(this).setTitle("Свойства модели").setMessage(info).setPositiveButton("OK", null).show()
             R.id.action_load_project -> loadProject.launch(arrayOf("application/json", "text/plain", "*/*"))
             R.id.action_reset -> { try { internalProject().delete() } catch (_: Exception) {}; js("SV.resetEdits()"); Toast.makeText(this, "Изменения сброшены", Toast.LENGTH_SHORT).show() }
             R.id.q_low, R.id.q_mid, R.id.q_high -> {
