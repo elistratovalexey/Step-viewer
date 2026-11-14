@@ -493,7 +493,7 @@ function exportSTEP() {
   const pdCtx = A("PRODUCT_DEFINITION_CONTEXT('part definition'," + R(appCtx) + ",'design')");
   const pCtx = A("PRODUCT_CONTEXT(''," + R(appCtx) + ",'mechanical')");
   const prodName = ascii(modelName.replace(/\.[^.]+$/, '')) || 'Model';
-  const prod = A("PRODUCT(" + Q(prodName) + "," + Q(prodName) + "('',(" + R(pCtx) + "))").replace("(''", "''"));
+  const prod = A("PRODUCT(" + Q(prodName) + "," + Q(prodName) + ",'',(" + R(pCtx) + "))");
   const pdf = A("PRODUCT_DEFINITION_FORMATION('',''," + R(prod) + ")");
   const pd = A("PRODUCT_DEFINITION('design',''," + R(pdf) + "," + R(pdCtx) + ")");
   const pds = A("PRODUCT_DEFINITION_SHAPE('',''," + R(pd) + ")");
