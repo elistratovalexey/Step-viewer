@@ -22,6 +22,7 @@
         <item android:id="@+id/action_dark" android:checkable="true" android:checked="true" android:title="Тёмный фон" />
     </group>
     <item android:id="@+id/action_parts" android:title="Детали" />
+    <item android:id="@+id/action_settings" android:title="Настройки" />
     <item android:id="@+id/action_load_project" android:title="Загрузить проект (.json)" />
     <item android:id="@+id/action_reset" android:title="Сбросить изменения" />
     <item android:title="Качество триангуляции">
