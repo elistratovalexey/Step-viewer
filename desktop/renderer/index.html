@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>STEP Viewer</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="shell.css">
+<script type="importmap">
+{ "imports": { "three": "./lib/three.module.js", "three/addons/": "./lib/addons/" } }
+</script>
+</head>
+<body>
+
+<div id="app">
+
+  <header id="topbar">
+    <div class="brand">
+      <span class="mark"></span>
+      <span class="name">STEP<b>Viewer</b></span>
+      <span class="ver" id="appVersion">—</span>
+    </div>
+    <div class="filebar">
+      <span id="fileName" class="fname">Модель не открыта</span>
+      <span id="fileMeta" class="fmeta"></span>
+    </div>
+    <div class="topActions">
+      <button class="tbtn primary" id="btnOpen" title="Открыть модель (Ctrl+O)">Открыть</button>
+      <button class="tbtn" id="btnSaveProject" title="Сохранить проект (Ctrl+S)">Проект ↓</button>
+      <button class="tbtn" id="btnLoadProject" title="Загрузить проект">Проект ↑</button>
+      <button class="tbtn" id="btnExportStl" title="Экспорт STL (Ctrl+E)">STL</button>
+      <button class="tbtn" id="btnExportStep" title="Экспорт STEP (Ctrl+Shift+E)">STEP</button>
+      <button class="tbtn icon" id="btnSettings" title="Настройки (Ctrl+,)">⚙</button>
+      <button class="tbtn icon" id="btnAbout" title="О программе">?</button>
+    </div>
+  </header>
+
+  <div id="workspace">
+
+    <aside id="leftDock">
+      <div id="treePanel" class="panel dock hidden">
+        <div class="phead"><span>Дерево сборки</span><button id="treeClose" class="iconbtn" title="Скрыть панель">✕</button></div>
+        <input id="treeSearch" class="psearch" type="search" placeholder="Поиск детали или узла…">
+        <div id="treeBody" class="pbody"></div>
+        <div class="pfoot">
+          <button id="treeShowAll" class="pbtn">Показать все</button>
+          <button id="treeIsolate" class="pbtn accent">Изолировать</button>
+        </div>
+      </div>
+    </aside>
+
+    <main id="viewport">
+      <canvas id="c"></canvas>
+
+      <div id="hint" class="hint hidden"></div>
+
+      <div id="viewPad" class="viewpad">
+        <button data-view="iso" class="vbtn" title="Изометрия (1)">ISO</button>
+        <button data-view="front" class="vbtn" title="Спереди (2)">FR</button>
+        <button data-view="top" class="vbtn" title="Сверху (3)">TOP</button>
+        <button data-view="right" class="vbtn" title="Справа (4)">RT</button>
+        <button id="btnFitPad" class="vbtn wide" title="Вписать (F)">Вписать</button>
+      </div>
+
+      <div id="legend" class="legend">
+        <span><i class="dot vertex"></i>вершина</span>
+        <span><i class="dot edge"></i>ребро</span>
+        <span><i class="dot surface"></i>поверхность</span>
+      </div>
+
+      <div id="loading" class="overlay hidden">
+        <div class="spinner"></div>
+        <div id="loadingText" class="loadtext">Загрузка…</div>
+      </div>
+
+      <div id="startScreen" class="overlay start">
+        <div class="startCard">
+          <div class="startMark"></div>
+          <h1>STEP Viewer для Windows</h1>
+          <p class="lead">Откройте <b>.step</b>, <b>.stp</b>, <b>.iges</b>, <b>.igs</b> или <b>.brep</b>.
+          Файлы обрабатываются локально ядром OpenCascade и никуда не отправляются.</p>
+          <div class="startBtns">
+            <button class="bigbtn primary" id="btnOpenStart">Открыть модель</button>
+            <button class="bigbtn" id="btnLoadProjectStart">Загрузить проект</button>
+          </div>
+          <div class="recentWrap">
+            <div class="recentHead"><span>Недавние файлы</span><button id="btnClearRecent" class="linkbtn">очистить</button></div>
+            <div id="recentList" class="recentList"></div>
+          </div>
+          <div class="dropNote">Файл можно просто перетащить в окно</div>
+        </div>
+      </div>
+
+      <div id="dropZone" class="dropzone hidden"><div class="dropInner">Отпустите файл, чтобы открыть</div></div>
+    </main>
+
+    <aside id="rightDock">
+      <section class="card" id="measPanel">
+        <div class="cardHead"><span>Измерения</span><span class="badgeCount" id="measCount">0</span></div>
+        <div class="cardBody" id="measList"></div>
+        <div class="cardFoot">
+          <button class="sbtn" id="btnMeasCopy">Копировать</button>
+          <button class="sbtn danger" id="btnMeasClear">Очистить</button>
+        </div>
+      </section>
+
+      <div id="pointPanel" class="panel dock right hidden">
+        <div class="phead"><span>Координаты XYZ</span><button id="pointClose" class="iconbtn">✕</button></div>
+        <div id="pointBody" class="pbody"></div>
+      </div>
+
+      <section class="card hidden" id="selPanel">
+        <div class="cardHead"><span>Деталь</span><button class="iconbtn" id="btnSelClear">✕</button></div>
+        <div class="cardBody">
+          <div class="selName" id="selName">—</div>
+          <div class="swatches" id="selSwatches"></div>
+          <div class="selBtns">
+            <button class="sbtn" id="btnSelHide">Скрыть</button>
+            <button class="sbtn" id="btnSelIsolate">Только её</button>
+            <button class="sbtn" id="btnSelShowAll">Показать все</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" id="propsPanel">
+        <div class="cardHead"><span>Свойства модели</span></div>
+        <div class="cardBody props" id="propsBody"><div class="empty">Модель не загружена</div></div>
+      </section>
+    </aside>
+  </div>
+
+  <footer id="deck">
+    <div class="deckRow">
+      <span class="rowLabel">Режим</span>
+      <div class="seg" id="modeSeg">
+        <button class="dbtn" data-mode="select">Выбор</button>
+        <button class="dbtn" data-mode="measure">Расстояние</button>
+        <button class="dbtn" data-mode="point">Точка XYZ</button>
+        <button class="dbtn" data-mode="angle">Угол</button>
+        <button class="dbtn" data-mode="min">Мин. расст.</button>
+        <button class="dbtn" data-mode="radius">Радиус</button>
+      </div>
+      <span class="sep"></span>
+      <button class="dbtn toggle" id="btnSnap">Привязка</button>
+      <label class="inline">Порог ребра
+        <input type="range" id="sharpRange" min="1" max="89" step="1" value="20">
+        <b id="sharpVal">20°</b>
+      </label>
+    </div>
+
+    <div class="deckRow">
+      <span class="rowLabel">Вид</span>
+      <button class="dbtn toggle" id="btnTree">Дерево</button>
+      <button class="dbtn toggle" id="btnWire">Каркас</button>
+      <button class="dbtn toggle" id="btnEdges">Рёбра</button>
+      <button class="dbtn toggle" id="btnOrtho">Орто</button>
+      <button class="dbtn toggle" id="btnGrid">Сетка</button>
+      <button class="dbtn toggle" id="btnDark">Тёмный фон</button>
+      <span class="sep"></span>
+      <label class="inline">Качество
+        <select id="qualitySel" class="sel">
+          <option value="0.005">Быстро</option>
+          <option value="0.001" selected>Обычное</option>
+          <option value="0.0003">Точное</option>
+        </select>
+      </label>
+      <button class="dbtn" id="btnResetEdits">Сбросить правки</button>
+    </div>
+
+    <div class="deckRow">
+      <span class="rowLabel">Сечение</span>
+      <div class="seg">
+        <button class="dbtn axis" data-axis="x">X</button>
+        <button class="dbtn axis" data-axis="y">Y</button>
+        <button class="dbtn axis" data-axis="z">Z</button>
+      </div>
+      <button class="dbtn toggle rose" id="secEnable">Вкл</button>
+      <button class="dbtn toggle rose" id="secFlip">Инверсия</button>
+      <input type="range" id="secSeek" class="wide-range" min="-100" max="100" step="1" value="0">
+      <b id="secVal" class="num">0%</b>
+      <button class="dbtn toggle rose" id="secShow">Плоскости</button>
+      <button class="dbtn" id="secOff">Выключить все</button>
+    </div>
+  </footer>
+
+  <div id="statusbar">
+    <span id="statusLeft">Готово</span>
+    <span class="grow"></span>
+    <span id="statusRight"></span>
+  </div>
+</div>
+
+<div id="dropVeil" class="veil hidden"></div>
+<dialog id="dlg" class="dlg"><div id="dlgInner"></div></dialog>
+<div id="toasts" class="toasts"></div>
+
+<script src="lib/occt-import-js.js"></script>
+<script src="bridge.js"></script>
+<script type="module" src="shell.js"></script>
+<script type="module" src="viewer.js"></script>
+</body>
+</html>
