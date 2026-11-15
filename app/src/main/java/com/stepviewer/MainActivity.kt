@@ -50,9 +50,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var bEdges: Button
     private lateinit var bOrtho: Button
     private lateinit var bGrid: Button
-    private lateinit var bModeSelect: Button
-    private lateinit var bModeMeasure: Button
-    private lateinit var bModePoint: Button
     private lateinit var bSnap: Button
     private lateinit var bTree: Button
     private lateinit var secX: Button
@@ -65,6 +62,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var bMeasList: Button
     private lateinit var modelHandler: ModelPathHandler
     private lateinit var prefs: SharedPreferences
+    private lateinit var modeButtons: Map<String, Button>
 
     private var ready = false
     private var pending: Uri? = null
@@ -99,6 +97,7 @@ class MainActivity : AppCompatActivity() {
     private var maxTrisStl = 600000
     private var maxTrisStep = 20000
     private var maxTrisEdges = 400000
+    private var sharpAngle = 20
 
     private val palette = arrayOf(
         "Стальной" to "#9fb0c0", "Красный" to "#e53935", "Оранжевый" to "#fb8c00",
@@ -135,9 +134,6 @@ class MainActivity : AppCompatActivity() {
         bEdges = findViewById(R.id.btnEdges)
         bOrtho = findViewById(R.id.btnOrtho)
         bGrid = findViewById(R.id.btnGrid)
-        bModeSelect = findViewById(R.id.modeSelect)
-        bModeMeasure = findViewById(R.id.modeMeasure)
-        bModePoint = findViewById(R.id.modePoint)
         bSnap = findViewById(R.id.btnSnap)
         bTree = findViewById(R.id.btnTree)
         secX = findViewById(R.id.secAxisX)
@@ -148,6 +144,14 @@ class MainActivity : AppCompatActivity() {
         secShow = findViewById(R.id.secShow)
         secSeek = findViewById(R.id.secSeek)
         bMeasList = findViewById(R.id.btnMeasList)
+        modeButtons = mapOf(
+            "select" to findViewById(R.id.modeSelect),
+            "measure" to findViewById(R.id.modeMeasure),
+            "point" to findViewById(R.id.modePoint),
+            "angle" to findViewById(R.id.modeAngle),
+            "min" to findViewById(R.id.modeMin),
+            "radius" to findViewById(R.id.modeRadius)
+        )
         modelHandler = ModelPathHandler(contentResolver)
         initWeb()
         wireUi()
@@ -160,6 +164,7 @@ class MainActivity : AppCompatActivity() {
         maxTrisStl = prefs.getInt("maxTrisStl", 600000)
         maxTrisStep = prefs.getInt("maxTrisStep", 20000)
         maxTrisEdges = prefs.getInt("maxTrisEdges", 400000)
+        sharpAngle = prefs.getInt("sharpAngle", 20)
     }
 
     private fun saveLimits() {
@@ -168,10 +173,12 @@ class MainActivity : AppCompatActivity() {
             .putInt("maxTrisStl", maxTrisStl)
             .putInt("maxTrisStep", maxTrisStep)
             .putInt("maxTrisEdges", maxTrisEdges)
+            .putInt("sharpAngle", sharpAngle)
             .apply()
     }
 
-    private fun pushLimits() = js("SV.setLimits({model:$maxTrisModel,stl:$maxTrisStl,step:$maxTrisStep,edges:$maxTrisEdges})")
+    private fun limitsJson() = "{model:$maxTrisModel,stl:$maxTrisStl,step:$maxTrisStep,edges:$maxTrisEdges,sharp:$sharpAngle}"
+    private fun pushLimits() = js("SV.setLimits(${limitsJson()})")
 
     private fun settingsDialog() {
         val pad = (resources.displayMetrics.density * 18).toInt()
@@ -196,10 +203,11 @@ class MainActivity : AppCompatActivity() {
         val eModel = field("Макс. треугольников в модели (0 = без лимита)", maxTrisModel)
         val eStl = field("Макс. треугольников для экспорта STL (0 = без лимита)", maxTrisStl)
         val eStep = field("Макс. треугольников для экспорта STEP (0 = без лимита)", maxTrisStep)
-        val eEdges = field("Макс. треугольников на деталь для рёбер (0 = без лимита)", maxTrisEdges)
+        val eEdges = field("Макс. треугольников на деталь для рёбер и привязки", maxTrisEdges)
+        val eSharp = field("Порог острого ребра, градусы (1–89). Меньше — ловит больше рёбер", sharpAngle)
 
         val note = TextView(this)
-        note.text = "Если сетка модели тяжелее лимита, шаг триангуляции автоматически укрупняется и разбор повторяется (до 5 попыток). Изменение первого поля перезагрузит текущую модель."
+        note.text = "Порог 20° отсекает диагонали триангуляции на плоскостях. Для галтелей и мягких переходов снизьте до 8–12°. Изменение первых четырёх полей перезагрузит модель."
         note.textSize = 11f
         note.setPadding(0, pad, 0, pad / 2)
         box.addView(note)
@@ -207,9 +215,9 @@ class MainActivity : AppCompatActivity() {
         val scroll = ScrollView(this)
         scroll.addView(box)
 
-        fun read(e: EditText, def: Int): Int {
+        fun read(e: EditText, def: Int, hi: Int): Int {
             val v = e.text.toString().trim().toIntOrNull() ?: return def
-            return v.coerceIn(0, 20000000)
+            return v.coerceIn(0, hi)
         }
 
         AlertDialog.Builder(this)
@@ -217,17 +225,18 @@ class MainActivity : AppCompatActivity() {
             .setView(scroll)
             .setPositiveButton("Сохранить") { _, _ ->
                 val oldModel = maxTrisModel
-                maxTrisModel = read(eModel, maxTrisModel)
-                maxTrisStl = read(eStl, maxTrisStl)
-                maxTrisStep = read(eStep, maxTrisStep)
-                maxTrisEdges = read(eEdges, maxTrisEdges)
-                saveLimits()
-                pushLimits()
+                val oldEdges = maxTrisEdges
+                maxTrisModel = read(eModel, maxTrisModel, 20000000)
+                maxTrisStl = read(eStl, maxTrisStl, 20000000)
+                maxTrisStep = read(eStep, maxTrisStep, 20000000)
+                maxTrisEdges = read(eEdges, maxTrisEdges, 20000000)
+                sharpAngle = read(eSharp, sharpAngle, 89).coerceAtLeast(1)
+                saveLimits(); pushLimits()
                 Toast.makeText(this, "Настройки сохранены", Toast.LENGTH_SHORT).show()
-                if (oldModel != maxTrisModel) current?.let { open(it) }
+                if (oldModel != maxTrisModel || oldEdges != maxTrisEdges) current?.let { open(it) }
             }
             .setNeutralButton("По умолчанию") { _, _ ->
-                maxTrisModel = 1500000; maxTrisStl = 600000; maxTrisStep = 20000; maxTrisEdges = 400000
+                maxTrisModel = 1500000; maxTrisStl = 600000; maxTrisStep = 20000; maxTrisEdges = 400000; sharpAngle = 20
                 saveLimits(); pushLimits()
                 Toast.makeText(this, "Значения сброшены", Toast.LENGTH_SHORT).show()
                 current?.let { open(it) }
@@ -244,9 +253,7 @@ class MainActivity : AppCompatActivity() {
         bEdges.setOnClickListener { toggleEdges() }
         bOrtho.setOnClickListener { toggleOrtho() }
         bGrid.setOnClickListener { grid = !grid; js("SV.setGrid($grid)"); updateDeck() }
-        bModeSelect.setOnClickListener { setMode("select") }
-        bModeMeasure.setOnClickListener { setMode("measure") }
-        bModePoint.setOnClickListener { setMode("point") }
+        modeButtons.forEach { (m, b) -> b.setOnClickListener { setMode(m) } }
         bSnap.setOnClickListener { snap = !snap; js("SV.setSnap($snap)"); updateDeck() }
         bTree.setOnClickListener { treeOpen = !treeOpen; js("SV.setTreeOpen($treeOpen)"); updateDeck() }
         secX.setOnClickListener { setAxis("x") }
@@ -312,12 +319,12 @@ class MainActivity : AppCompatActivity() {
             "ready" -> { ready = true; pushSettings(); pending?.let { pending = null; startLoad(it) } }
             "status" -> status.text = o.optString("text")
             "toast" -> Toast.makeText(this, o.optString("text"), Toast.LENGTH_LONG).show()
-            "measureHint" -> { val t = o.optString("text"); hint.text = t; hint.visibility = if (mode == "measure" && t.isNotEmpty()) View.VISIBLE else View.GONE }
+            "measureHint" -> { val t = o.optString("text"); hint.text = t; hint.visibility = if (mode != "select" && t.isNotEmpty()) View.VISIBLE else View.GONE }
             "select" -> { selIndex = o.optInt("index", -1); selName = o.optString("name"); supportActionBar?.subtitle = "▣ $selName"; if (selIndex >= 0) selectionDialog() }
             "deselect" -> { selIndex = -1; selName = ""; supportActionBar?.subtitle = stats }
             "treeSelect" -> { supportActionBar?.subtitle = "▣ ${o.optString("name")} · ${o.optInt("count")} дет." }
             "tree" -> { treeOpen = o.optBoolean("open"); updateDeck() }
-            "mode" -> { mode = o.optString("mode", "select"); hint.visibility = if (mode == "measure" || mode == "point") View.VISIBLE else View.GONE; hint.text = if (mode == "point") "Тапните точку для координат XYZ" else if (mode == "measure") "Тапните первую точку" else ""; updateDeck() }
+            "mode" -> { mode = o.optString("mode", "select"); applyModeUi(); updateDeck() }
             "measures" -> { measList = o.optJSONArray("list") ?: JSONArray(); bMeasList.text = "Измерения (${measList.length()})" }
             "points" -> { }
             "point" -> { supportActionBar?.subtitle = "XYZ: ${fmt(o.optDouble("x"))}, ${fmt(o.optDouble("y"))}, ${fmt(o.optDouble("z"))}" }
@@ -325,7 +332,7 @@ class MainActivity : AppCompatActivity() {
             "copy" -> {
                 val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 cm.setPrimaryClip(ClipData.newPlainText("XYZ", o.optString("text")))
-                Toast.makeText(this, "Координаты скопированы", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Скопировано", Toast.LENGTH_SHORT).show()
             }
             "state" -> { latestState = o.optJSONObject("state")?.toString() ?: ""; scheduleAutosave() }
             "fileChunk" -> { if (o.optInt("seq") == 0) fileBuf = ByteArrayOutputStream(); fileBuf.write(Base64.decode(o.optString("data"), Base64.DEFAULT)) }
@@ -346,6 +353,7 @@ class MainActivity : AppCompatActivity() {
                     append("Треугольников: ").append(o.optInt("triangles")).append('\n')
                     append("Шаг триангуляции: ").append(String.format(Locale.US, "%.5f", usedDeflection)).append('\n')
                     append("Лимит треугольников: ").append(if (maxTrisModel == 0) "без лимита" else maxTrisModel.toString()).append('\n')
+                    append("Порог острого ребра: ").append(sharpAngle).append("°\n")
                     append("Габариты, мм: ").append(fmt(d(0))).append(" × ").append(fmt(d(1))).append(" × ").append(fmt(d(2))).append('\n')
                     append("Время загрузки: ").append(fmt(o.optDouble("time") / 1000.0)).append(" с")
                 }
@@ -391,7 +399,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun js(code: String) = web.evaluateJavascript("window.SV && ($code)", null)
     private fun pushSettings() = js(
-        "SV.setWireframe($wire), SV.setEdges($edges), SV.setOrtho($ortho), SV.setGrid($grid), SV.setDark($dark), SV.setQuality($deflection), SV.setSnap($snap), SV.setMode(${JSONObject.quote(mode)}), SV.setSection($secState), SV.setLimits({model:$maxTrisModel,stl:$maxTrisStl,step:$maxTrisStep,edges:$maxTrisEdges})"
+        "SV.setWireframe($wire), SV.setEdges($edges), SV.setOrtho($ortho), SV.setGrid($grid), SV.setDark($dark), SV.setQuality($deflection), SV.setSnap($snap), SV.setMode(${JSONObject.quote(mode)}), SV.setSection($secState), SV.setLimits(${limitsJson()})"
     )
 
     private fun chip(b: Button, on: Boolean, accent: Int = 0xFF1E88E5.toInt()) {
@@ -400,16 +408,23 @@ class MainActivity : AppCompatActivity() {
         b.setTypeface(null, if (on) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
     }
     private fun updateDeck() {
-        chip(bModeSelect, mode == "select"); chip(bModeMeasure, mode == "measure", 0xFFF59E0B.toInt()); chip(bModePoint, mode == "point", 0xFFF59E0B.toInt())
+        modeButtons.forEach { (m, b) -> chip(b, mode == m, if (m == "select") 0xFF1E88E5.toInt() else 0xFFF59E0B.toInt()) }
         chip(bSnap, snap, 0xFF22C55E.toInt()); chip(bTree, treeOpen)
         chip(bWire, wire); chip(bEdges, edges); chip(bOrtho, ortho); chip(bGrid, grid)
     }
-    private fun setMode(m: String) {
-        mode = m; js("SV.setMode(${JSONObject.quote(m)})")
-        hint.visibility = if (m != "select") View.VISIBLE else View.GONE
-        hint.text = when (m) { "measure" -> "Тапните первую точку"; "point" -> "Тапните точку для координат XYZ"; else -> "" }
-        updateDeck()
+    private fun applyModeUi() {
+        val text = when (mode) {
+            "measure" -> "Тапните первую точку"
+            "point" -> "Тапните точку для координат XYZ"
+            "angle" -> "Тапните первое ребро или грань"
+            "min" -> "Тапните первое ребро"
+            "radius" -> "Тапните по круговому ребру или цилиндру"
+            else -> ""
+        }
+        hint.text = text
+        hint.visibility = if (text.isEmpty()) View.GONE else View.VISIBLE
     }
+    private fun setMode(m: String) { mode = m; js("SV.setMode(${JSONObject.quote(m)})"); applyModeUi(); updateDeck() }
     private fun toggleWire() { wire = !wire; js("SV.setWireframe($wire)"); updateDeck(); invalidateOptionsMenu() }
     private fun toggleEdges() { edges = !edges; js("SV.setEdges($edges)"); updateDeck(); invalidateOptionsMenu() }
     private fun toggleOrtho() { ortho = !ortho; js("SV.setOrtho($ortho)"); updateDeck(); invalidateOptionsMenu() }
@@ -442,10 +457,22 @@ class MainActivity : AppCompatActivity() {
         AlertDialog.Builder(this).setTitle("Цвет: $selName").setItems(palette.map { it.first }.toTypedArray()) { _, w -> js("SV.setColor(${JSONObject.quote(palette[w].second)})") }.show()
     }
     private fun measuresDialog() {
-        if (measList.length() == 0) { Toast.makeText(this, "Измерений пока нет. Включите «Измерение» и тапните две точки.", Toast.LENGTH_LONG).show(); return }
-        val items = Array(measList.length()) { i -> val m = measList.getJSONObject(i); val d = m.optDouble("d"); "№${m.optInt("id")}  —  " + if (d >= 1000) fmt(d / 1000) + " м" else fmt(d) + " мм" }
+        if (measList.length() == 0) { Toast.makeText(this, "Измерений нет. Выберите режим: Расстояние, Угол, Мин. расст. или Радиус.", Toast.LENGTH_LONG).show(); return }
+        val icons = mapOf("dist" to "↔", "min" to "⇢", "angle" to "∠", "circle" to "◯")
+        val items = Array(measList.length()) { i ->
+            val m = measList.getJSONObject(i)
+            (icons[m.optString("type")] ?: "•") + "  " + m.optString("text")
+        }
         AlertDialog.Builder(this).setTitle("Измерения — тап для удаления").setItems(items) { _, w -> js("SV.deleteMeasure(${measList.getJSONObject(w).optInt("id")})") }
-            .setNeutralButton("Очистить все") { _, _ -> js("SV.clearMeasures()") }.setPositiveButton("Закрыть", null).show()
+            .setNeutralButton("Очистить все") { _, _ -> js("SV.clearMeasures()") }
+            .setPositiveButton("Копировать список") { _, _ ->
+                val sb = StringBuilder()
+                for (i in 0 until measList.length()) sb.append(measList.getJSONObject(i).optString("text")).append('\n')
+                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("measurements", sb.toString()))
+                Toast.makeText(this, "Список скопирован", Toast.LENGTH_SHORT).show()
+            }
+            .show()
     }
 
     private fun projectKey(): String {
