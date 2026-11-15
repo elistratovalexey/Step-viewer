@@ -1,0 +1,65 @@
+name: Build Windows
+
+on:
+  push:
+    paths:
+      - 'desktop/**'
+      - 'app/src/main/assets/viewer/**'
+      - '.github/workflows/windows.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Assemble renderer from Android assets
+        run: |
+          set -e
+          mkdir -p desktop/renderer/lib/addons/controls
+          cp app/src/main/assets/viewer/viewer.js desktop/renderer/viewer.js
+          cp app/src/main/assets/viewer/style.css desktop/renderer/style.css
+          npm install --no-audit --no-fund occt-import-js three@0.160.0
+          cp node_modules/occt-import-js/dist/occt-import-js.js   desktop/renderer/lib/
+          cp node_modules/occt-import-js/dist/occt-import-js.wasm desktop/renderer/lib/
+          cp node_modules/three/build/three.module.js             desktop/renderer/lib/
+          cp node_modules/three/examples/jsm/controls/OrbitControls.js desktop/renderer/lib/addons/controls/
+          ls -l desktop/renderer desktop/renderer/lib
+
+      - name: Install Electron toolchain
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+
+      - name: Stamp version
+        working-directory: desktop
+        run: npm version "1.0.${{ github.run_number }}" --no-git-tag-version --allow-same-version
+
+      - name: Generate application icon
+        working-directory: desktop
+        run: node build/make-icon.cjs
+
+      - name: Build installer and portable exe
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run dist
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p out
+          cp desktop/dist/*.exe out/ || true
+          ls -l out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StepViewer-Windows-1.0.${{ github.run_number }}
+          path: out/*.exe
+          if-no-files-found: error
