@@ -1,0 +1,44 @@
+{
+  "name": "step-viewer-desktop",
+  "productName": "STEP Viewer",
+  "version": "1.0.0",
+  "description": "Offline STEP / IGES / BREP viewer with measurements",
+  "author": "StepViewer",
+  "license": "MIT",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "icon": "node build/make-icon.cjs",
+    "dist": "electron-builder --win --x64"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.stepviewer.desktop",
+    "productName": "STEP Viewer",
+    "publish": null,
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["main.cjs", "preload.cjs", "renderer/**/*", "build/icon.ico"],
+    "asarUnpack": ["renderer/lib/*.wasm"],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "artifactName": "StepViewer-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "STEP Viewer",
+      "deleteAppDataOnUninstall": false
+    },
+    "portable": { "artifactName": "StepViewer-${version}-portable.${ext}" }
+  }
+}
