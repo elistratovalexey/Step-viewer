@@ -76,6 +76,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
+                android:gravity="center"
                 android:textColor="#FFFFFF"
                 android:textSize="14sp" />
         </LinearLayout>
@@ -101,11 +102,38 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
+                android:gravity="center_vertical"
                 android:paddingLeft="4dp"
                 android:paddingRight="4dp">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Режим" android:textColor="#78909C" android:textSize="11sp"
+                    android:paddingLeft="8dp" android:paddingRight="6dp" />
                 <androidx.appcompat.widget.AppCompatButton android:id="@+id/modeSelect" style="@style/DeckButton" android:text="Выбор" />
-                <androidx.appcompat.widget.AppCompatButton android:id="@+id/modeMeasure" style="@style/DeckButton" android:text="Измерение" />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/modeMeasure" style="@style/DeckButton" android:text="Расстояние" />
                 <androidx.appcompat.widget.AppCompatButton android:id="@+id/modePoint" style="@style/DeckButton" android:text="Точка XYZ" />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/modeAngle" style="@style/DeckButton" android:text="Угол" />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/modeMin" style="@style/DeckButton" android:text="Мин. расст." />
+                <androidx.appcompat.widget.AppCompatButton android:id="@+id/modeRadius" style="@style/DeckButton" android:text="Радиус" />
+            </LinearLayout>
+        </HorizontalScrollView>
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:scrollbars="horizontal"
+            android:scrollbarSize="3dp"
+            android:scrollbarThumbHorizontal="@drawable/scroll_thumb">
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingLeft="4dp"
+                android:paddingRight="4dp">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Вид" android:textColor="#78909C" android:textSize="11sp"
+                    android:paddingLeft="8dp" android:paddingRight="6dp" />
                 <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnSnap" style="@style/DeckButton" android:text="Привязка" />
                 <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnTree" style="@style/DeckButton" android:text="Дерево" />
                 <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnWire" style="@style/DeckButton" android:text="Каркас" />
@@ -131,14 +159,9 @@
                 android:gravity="center_vertical"
                 android:paddingLeft="4dp"
                 android:paddingRight="4dp">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Сечение"
-                    android:textColor="#78909C"
-                    android:textSize="12sp"
-                    android:paddingLeft="8dp"
-                    android:paddingRight="6dp" />
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Сечение" android:textColor="#78909C" android:textSize="11sp"
+                    android:paddingLeft="8dp" android:paddingRight="6dp" />
                 <androidx.appcompat.widget.AppCompatButton android:id="@+id/secAxisX" style="@style/DeckButton" android:text="X" />
                 <androidx.appcompat.widget.AppCompatButton android:id="@+id/secAxisY" style="@style/DeckButton" android:text="Y" />
                 <androidx.appcompat.widget.AppCompatButton android:id="@+id/secAxisZ" style="@style/DeckButton" android:text="Z" />
@@ -167,8 +190,12 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
+                android:gravity="center_vertical"
                 android:paddingLeft="4dp"
                 android:paddingRight="4dp">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Файл" android:textColor="#78909C" android:textSize="11sp"
+                    android:paddingLeft="8dp" android:paddingRight="6dp" />
                 <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnMeasList" style="@style/DeckButton" android:text="Измерения (0)" />
                 <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnMeasClear" style="@style/DeckButton" android:text="Очистить" />
                 <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnSave" style="@style/DeckButton" android:text="Сохранить" />
